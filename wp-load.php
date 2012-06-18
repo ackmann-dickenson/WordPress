@@ -18,7 +18,7 @@
  * @package WordPress
  */
 
-/** Define ABSPATH as this files directory */
+/** Define ABSPATH as this file's directory */
 define( 'ABSPATH', dirname(__FILE__) . '/' );
 
 error_reporting( E_CORE_ERROR | E_CORE_WARNING | E_COMPILE_ERROR | E_ERROR | E_WARNING | E_PARSE | E_USER_ERROR | E_USER_WARNING | E_RECOVERABLE_ERROR );
@@ -30,7 +30,7 @@ if ( file_exists( ABSPATH . 'wp-config.php') ) {
 
 } elseif ( file_exists( dirname(ABSPATH) . '/wp-config.php' ) && ! file_exists( dirname(ABSPATH) . '/wp-settings.php' ) ) {
 
-	/** The config file resides one level above ABSPATH but is not part of another install*/
+	/** The config file resides one level above ABSPATH but is not part of another install */
 	require_once( dirname(ABSPATH) . '/wp-config.php' );
 
 } else {
@@ -52,10 +52,10 @@ if ( file_exists( ABSPATH . 'wp-config.php') ) {
 	wp_check_php_mysql_versions();
 
 	// Die with an error message
-	$die  = '<p>' . __( "There doesn't seem to be a <code>wp-config.php</code> file. I need this before we can get started." ) . '</p>';
+	$die  = __( "There doesn't seem to be a <code>wp-config.php</code> file. I need this before we can get started." ) . '</p>';
 	$die .= '<p>' . __( "Need more help? <a href='http://codex.wordpress.org/Editing_wp-config.php'>We got it</a>." ) . '</p>';
 	$die .= '<p>' . __( "You can create a <code>wp-config.php</code> file through a web interface, but this doesn't work for all server setups. The safest way is to manually create the file." ) . '</p>';
-	$die .= '<p><a href="' . $path . '" class="button">' . __( "Create a Configuration File" ) . '</a></p>';
+	$die .= '<p><a href="' . $path . '" class="button">' . __( "Create a Configuration File" ) . '</a>';
 
 	wp_die( $die, __( 'WordPress &rsaquo; Error' ) );
 }

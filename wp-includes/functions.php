@@ -426,10 +426,9 @@ function do_enclose( $content, $post_ID ) {
 
 	foreach ( $pung as $link_test ) {
 		if ( !in_array( $link_test, $post_links_temp[0] ) ) { // link no longer in post
-			$mid = $wpdb->get_col( $wpdb->prepare("SELECT meta_id FROM $wpdb->postmeta WHERE post_id = %d AND meta_key = 'enclosure' AND meta_value LIKE (%s)", $post_ID, like_escape( $link_test ) . '%') );
-			do_action( 'delete_postmeta', $mid );
-			$wpdb->query( $wpdb->prepare("DELETE FROM $wpdb->postmeta WHERE meta_id IN(%s)", implode( ',', $mid ) ) );
-			do_action( 'deleted_postmeta', $mid );
+			$mids = $wpdb->get_col( $wpdb->prepare("SELECT meta_id FROM $wpdb->postmeta WHERE post_id = %d AND meta_key = 'enclosure' AND meta_value LIKE (%s)", $post_ID, like_escape( $link_test ) . '%') );
+			foreach ( $mids as $mid )
+				delete_metadata_by_mid( 'post', $mid );
 		}
 	}
 
@@ -469,9 +468,7 @@ function do_enclose( $content, $post_ID ) {
 				}
 
 				if ( in_array( substr( $type, 0, strpos( $type, "/" ) ), $allowed_types ) ) {
-					$meta_value = "$url\n$len\n$type\n";
-					$wpdb->insert($wpdb->postmeta, array('post_id' => $post_ID, 'meta_key' => 'enclosure', 'meta_value' => $meta_value) );
-					do_action( 'added_postmeta', $wpdb->insert_id, $post_ID, 'enclosure', $meta_value );
+					add_post_meta( $post_ID, 'enclosure', "$url\n$len\n$mime\n" );
 				}
 			}
 		}
@@ -1977,7 +1974,7 @@ function wp_die( $message = '', $title = '', $args = array() ) {
 	elseif ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST )
 		$function = apply_filters( 'wp_die_xmlrpc_handler', '_xmlrpc_wp_die_handler' );
 	elseif ( defined( 'APP_REQUEST' ) && APP_REQUEST )
-		$function = apply_filters( 'wp_die_app_bandler', '_scalar_wp_die_handler' );
+		$function = apply_filters( 'wp_die_app_handler', '_scalar_wp_die_handler' );
 	else
 		$function = apply_filters( 'wp_die_handler', '_default_wp_die_handler' );
 
@@ -2067,6 +2064,15 @@ function _default_wp_die_handler( $message, $title = '', $args = array() ) {
 			border-radius: 3px;
 			border: 1px solid #dfdfdf;
 			max-width: 700px;
+		}
+		h1 {
+			border-bottom: 1px solid #dadada;
+			clear: both;
+			color: #666;
+			font: 24px Georgia, "Times New Roman", Times, serif;
+			margin: 30px 0 0 0;
+			padding: 0;
+			padding-bottom: 7px;
 		}
 		#error-page {
 			margin-top: 50px;
@@ -3372,6 +3378,9 @@ function get_file_data( $file, $default_headers, $context = '' ) {
 	// PHP will close file handle, but we are good citizens.
 	fclose( $fp );
 
+	// Make sure we catch CR-only line endings.
+	$file_data = str_replace( "\r", "\n", $file_data );
+
 	if ( $context && $extra_headers = apply_filters( "extra_{$context}_headers", array() ) ) {
 		$extra_headers = array_combine( $extra_headers, $extra_headers ); // keys equal values
 		$all_headers = array_merge( $extra_headers, (array) $default_headers );
@@ -3662,5 +3671,28 @@ function _get_non_cached_ids( $object_ids, $cache_key ) {
 	}
 
 	return $clean;
+}
+
+/**
+ * Test if the current device has the capability to upload files.
+ *
+ * @since 3.4.0
+ * @access private
+ *
+ * @return bool true|false
+ */
+function _device_can_upload() {
+	if ( ! wp_is_mobile() )
+		return true;
+
+	$ua = $_SERVER['HTTP_USER_AGENT'];
+
+	if ( strpos($ua, 'iPhone') !== false
+		|| strpos($ua, 'iPad') !== false
+		|| strpos($ua, 'iPod') !== false ) {
+			return false;
+	} else {
+		return true;
+	}
 }
 

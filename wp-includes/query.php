@@ -1624,7 +1624,7 @@ class WP_Query {
 		}
 
 		if ( '' != $qv['pagename'] ) {
-			$this->queried_object =& get_page_by_path($qv['pagename']);
+			$this->queried_object = get_page_by_path($qv['pagename']);
 			if ( !empty($this->queried_object) )
 				$this->queried_object_id = (int) $this->queried_object->ID;
 			else
@@ -2311,10 +2311,8 @@ class WP_Query {
 
 		// MIME-Type stuff for attachment browsing
 
-		if ( isset($q['post_mime_type']) && '' != $q['post_mime_type'] ) {
-			$table_alias = $post_status_join ? $wpdb->posts : '';
-			$whichmimetype = wp_post_mime_type_where($q['post_mime_type'], $table_alias);
-		}
+		if ( isset( $q['post_mime_type'] ) && '' != $q['post_mime_type'] )
+			$whichmimetype = wp_post_mime_type_where( $q['post_mime_type'], $wpdb->posts );
 
 		$where .= $search . $whichauthor . $whichmimetype;
 
@@ -2345,6 +2343,7 @@ class WP_Query {
 
 				switch ( $orderby ) {
 					case 'menu_order':
+						$orderby = "$wpdb->posts.menu_order";
 						break;
 					case 'ID':
 						$orderby = "$wpdb->posts.ID";
@@ -2628,7 +2627,10 @@ class WP_Query {
 			return $r;
 		}
 
-		if ( $old_request == $this->request && "$wpdb->posts.*" == $fields ) {
+		$split_the_query = ( $old_request == $this->request && "$wpdb->posts.*" == $fields && !empty( $limits ) && $q['posts_per_page'] < 500 );
+		$split_the_query = apply_filters( 'split_the_query', $split_the_query, $this );
+
+		if ( $split_the_query ) {
 			// First get the IDs and then fill in the objects
 
 			$this->request = "SELECT $found_rows $distinct $wpdb->posts.ID FROM $wpdb->posts $join WHERE 1=1 $where $groupby $orderby $limits";
@@ -2979,7 +2981,7 @@ class WP_Query {
 			$this->queried_object = get_post_type_object( $this->get('post_type') );
 		} elseif ( $this->is_posts_page ) {
 			$page_for_posts = get_option('page_for_posts');
-			$this->queried_object = & get_page( $page_for_posts );
+			$this->queried_object = get_page( $page_for_posts );
 			$this->queried_object_id = (int) $this->queried_object->ID;
 		} elseif ( $this->is_singular && !is_null($this->post) ) {
 			$this->queried_object = $this->post;

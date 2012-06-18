@@ -391,14 +391,15 @@ function register_taxonomy( $taxonomy, $object_type, $args = array() ) {
  * - parent_item - This string isn't used on non-hierarchical taxonomies. In hierarchical ones the default is Parent Category
  * - parent_item_colon - The same as <code>parent_item</code>, but with colon <code>:</code> in the end
  * - edit_item - Default is Edit Tag/Edit Category
+ * - view_item - Default is View Tag/View Category
  * - update_item - Default is Update Tag/Update Category
  * - add_new_item - Default is Add New Tag/Add New Category
  * - new_item_name - Default is New Tag Name/New Category Name
- * - separate_items_with_commas - This string isn't used on hierarchical taxonomies. Default is "Separate tags with commas," used in the meta box.
- * - add_or_remove_items - This string isn't used on hierarchical taxonomies. Default is "Add or remove tags," used in the meta box when JavaScript is disabled.
- * - choose_from_most_used - This string isn't used on hierarchical taxonomies. Default is "Choose from the most used tags," used in the meta box.
+ * - separate_items_with_commas - This string isn't used on hierarchical taxonomies. Default is "Separate tags with commas", used in the meta box.
+ * - add_or_remove_items - This string isn't used on hierarchical taxonomies. Default is "Add or remove tags", used in the meta box when JavaScript is disabled.
+ * - choose_from_most_used - This string isn't used on hierarchical taxonomies. Default is "Choose from the most used tags", used in the meta box.
  *
- * Above, the first default value is for non-hierarchical taxonomies (like tags) and the second one is for hierarchical taxonomies (like categories.)
+ * Above, the first default value is for non-hierarchical taxonomies (like tags) and the second one is for hierarchical taxonomies (like categories).
  *
  * @since 3.0.0
  * @param object $tax Taxonomy object
@@ -501,7 +502,7 @@ function get_objects_in_term( $term_ids, $taxonomies, $args = array() ) {
 
 	foreach ( (array) $taxonomies as $taxonomy ) {
 		if ( ! taxonomy_exists( $taxonomy ) )
-			return new WP_Error( 'invalid_taxonomy', __( 'Invalid Taxonomy' ) );
+			return new WP_Error( 'invalid_taxonomy', __( 'Invalid taxonomy' ) );
 	}
 
 	$defaults = array( 'order' => 'ASC' );
@@ -854,7 +855,7 @@ function &get_term($term, $taxonomy, $output = OBJECT, $filter = 'raw') {
 	}
 
 	if ( ! taxonomy_exists($taxonomy) ) {
-		$error = new WP_Error('invalid_taxonomy', __('Invalid Taxonomy'));
+		$error = new WP_Error('invalid_taxonomy', __('Invalid taxonomy'));
 		return $error;
 	}
 
@@ -983,7 +984,7 @@ function get_term_by($field, $value, $taxonomy, $output = OBJECT, $filter = 'raw
  */
 function get_term_children( $term_id, $taxonomy ) {
 	if ( ! taxonomy_exists($taxonomy) )
-		return new WP_Error('invalid_taxonomy', __('Invalid Taxonomy'));
+		return new WP_Error('invalid_taxonomy', __('Invalid taxonomy'));
 
 	$term_id = intval( $term_id );
 
@@ -1173,7 +1174,7 @@ function &get_terms($taxonomies, $args = '') {
 
 	foreach ( $taxonomies as $taxonomy ) {
 		if ( ! taxonomy_exists($taxonomy) ) {
-			$error = new WP_Error('invalid_taxonomy', __('Invalid Taxonomy'));
+			$error = new WP_Error('invalid_taxonomy', __('Invalid taxonomy'));
 			return $error;
 		}
 	}
@@ -1802,12 +1803,12 @@ function wp_delete_term( $term, $taxonomy, $args = array() ) {
 		clean_object_term_cache( $objects, $object_type );
 
 	do_action( 'delete_term_taxonomy', $tt_id );
-	$wpdb->query( $wpdb->prepare( "DELETE FROM $wpdb->term_taxonomy WHERE term_taxonomy_id = %d", $tt_id ) );
+	$wpdb->delete( $wpdb->term_taxonomy, array( 'term_taxonomy_id' => $tt_id ) );
 	do_action( 'deleted_term_taxonomy', $tt_id );
 
 	// Delete the term if no taxonomies use it.
 	if ( !$wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $wpdb->term_taxonomy WHERE term_id = %d", $term) ) )
-		$wpdb->query( $wpdb->prepare( "DELETE FROM $wpdb->terms WHERE term_id = %d", $term) );
+		$wpdb->delete( $wpdb->terms, array( 'term_id' => $term ) );
 
 	clean_term_cache($term, $taxonomy);
 
@@ -1874,7 +1875,7 @@ function wp_get_object_terms($object_ids, $taxonomies, $args = array()) {
 
 	foreach ( (array) $taxonomies as $taxonomy ) {
 		if ( ! taxonomy_exists($taxonomy) )
-			return new WP_Error('invalid_taxonomy', __('Invalid Taxonomy'));
+			return new WP_Error('invalid_taxonomy', __('Invalid taxonomy'));
 	}
 
 	if ( !is_array($object_ids) )
@@ -2145,7 +2146,7 @@ function wp_set_object_terms($object_id, $terms, $taxonomy, $append = false) {
 	$object_id = (int) $object_id;
 
 	if ( ! taxonomy_exists($taxonomy) )
-		return new WP_Error('invalid_taxonomy', __('Invalid Taxonomy'));
+		return new WP_Error('invalid_taxonomy', __('Invalid taxonomy'));
 
 	if ( !is_array($terms) )
 		$terms = array($terms);

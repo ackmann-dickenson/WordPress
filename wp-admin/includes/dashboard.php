@@ -193,54 +193,29 @@ function _wp_dashboard_control_callback( $dashboard, $meta_box ) {
  * @since 2.5.0
  */
 function wp_dashboard() {
-	global $screen_layout_columns;
-
 	$screen = get_current_screen();
+	$class = 'columns-' . get_current_screen()->get_columns();
 
-	$hide2 = $hide3 = $hide4 = '';
-	switch ( $screen_layout_columns ) {
-		case 4:
-			$width = 'width:25%;';
-			break;
-		case 3:
-			$width = 'width:33.333333%;';
-			$hide4 = 'display:none;';
-			break;
-		case 2:
-			$width = 'width:50%;';
-			$hide3 = $hide4 = 'display:none;';
-			break;
-		default:
-			$width = 'width:100%;';
-			$hide2 = $hide3 = $hide4 = 'display:none;';
-	}
 ?>
-<div id="dashboard-widgets" class="metabox-holder">
-<?php
-	echo "\t<div id='postbox-container-1' class='postbox-container' style='$width'>\n";
-	do_meta_boxes( $screen->id, 'normal', '' );
+<div id="dashboard-widgets" class="metabox-holder <?php echo $class; ?>">
+	<div id='postbox-container-1' class='postbox-container'>
+	<?php do_meta_boxes( $screen->id, 'normal', '' ); ?>
+	</div>
+	<div id='postbox-container-2' class='postbox-container'>
+	<?php do_meta_boxes( $screen->id, 'side', '' ); ?>
+	</div>
+	<div id='postbox-container-3' class='postbox-container'>
+	<?php do_meta_boxes( $screen->id, 'column3', '' ); ?>
+	</div>
+	<div id='postbox-container-4' class='postbox-container'>
+	<?php do_meta_boxes( $screen->id, 'column4', '' ); ?>
+	</div>
+</div>
 
-	echo "\t</div><div id='postbox-container-2' class='postbox-container' style='{$hide2}$width'>\n";
-	do_meta_boxes( $screen->id, 'side', '' );
-
-	echo "\t</div><div id='postbox-container-3' class='postbox-container' style='{$hide3}$width'>\n";
-	do_meta_boxes( $screen->id, 'column3', '' );
-
-	echo "\t</div><div id='postbox-container-4' class='postbox-container' style='{$hide4}$width'>\n";
-	do_meta_boxes( $screen->id, 'column4', '' );
-?>
-</div></div>
-
-<form style="display:none" method="get" action="">
-	<p>
 <?php
 	wp_nonce_field( 'closedpostboxes', 'closedpostboxesnonce', false );
 	wp_nonce_field( 'meta-box-order', 'meta-box-order-nonce', false );
-?>
-	</p>
-</form>
 
-<?php
 }
 
 /* Dashboard Widgets */
@@ -461,16 +436,16 @@ function wp_network_dashboard_right_now() {
 	<p class="youhave"><?php echo $sentence; ?></p>
 	<?php do_action( 'wpmuadminresult', '' ); ?>
 
-	<form name="searchform" action="<?php echo network_admin_url('users.php'); ?>" method="get">
+	<form action="<?php echo network_admin_url('users.php'); ?>" method="get">
 		<p>
-			<input type="text" name="s" value="" size="17" />
+			<input type="search" name="s" value="" size="30" autocomplete="off" />
 			<?php submit_button( __( 'Search Users' ), 'button', 'submit', false, array( 'id' => 'submit_users' ) ); ?>
 		</p>
 	</form>
 
-	<form name="searchform" action="<?php echo network_admin_url('sites.php'); ?>" method="get">
+	<form action="<?php echo network_admin_url('sites.php'); ?>" method="get">
 		<p>
-			<input type="text" name="s" value="" size="17" />
+			<input type="search" name="s" value="" size="30" autocomplete="off" />
 			<?php submit_button( __( 'Search Sites' ), 'button', 'submit', false, array( 'id' => 'submit_sites' ) ); ?>
 		</p>
 	</form>
@@ -614,11 +589,6 @@ function wp_dashboard_recent_drafts( $drafts = false ) {
 function wp_dashboard_recent_comments() {
 	global $wpdb;
 
-	if ( current_user_can('edit_posts') )
-		$allowed_states = array('0', '1');
-	else
-		$allowed_states = array('1');
-
 	// Select all comment types and filter out spam later for better query performance.
 	$comments = array();
 	$start = 0;
@@ -627,44 +597,36 @@ function wp_dashboard_recent_comments() {
 	$total_items = isset( $widgets['dashboard_recent_comments'] ) && isset( $widgets['dashboard_recent_comments']['items'] )
 		? absint( $widgets['dashboard_recent_comments']['items'] ) : 5;
 
-	while ( count( $comments ) < $total_items && $possible = $wpdb->get_results( "SELECT * FROM $wpdb->comments c LEFT JOIN $wpdb->posts p ON c.comment_post_ID = p.ID WHERE p.post_status != 'trash' ORDER BY c.comment_date_gmt DESC LIMIT $start, 50" ) ) {
+	$comments_query = array( 'number' => $total_items * 5, 'offset' => 0 );
+	if ( ! current_user_can( 'edit_posts' ) )
+		$comments_query['status'] = 'approve';
 
+	while ( count( $comments ) < $total_items && $possible = get_comments( $comments_query ) ) {
 		foreach ( $possible as $comment ) {
-			if ( count( $comments ) >= $total_items )
-				break;
-			if ( in_array( $comment->comment_approved, $allowed_states ) && current_user_can( 'read_post', $comment->comment_post_ID ) )
-				$comments[] = $comment;
+			if ( ! current_user_can( 'read_post', $comment->comment_post_ID ) )
+				continue;
+			$comments[] = $comment;
+			if ( count( $comments ) == $total_items )
+				break 2;
 		}
-
-		$start = $start + 50;
+		$comments_query['offset'] += $comments_query['number'];
+		$comments_query['number'] = $total_items * 10;
 	}
 
-	if ( $comments ) :
-?>
-
-		<div id="the-comment-list" class="list:comment">
-<?php
+	if ( $comments ) {
+		echo '<div id="the-comment-list" class="list:comment">';
 		foreach ( $comments as $comment )
 			_wp_dashboard_recent_comments_row( $comment );
-?>
+		echo '</div>';
 
-		</div>
-
-<?php
-		if ( current_user_can('edit_posts') ) { ?>
-			<?php _get_list_table('WP_Comments_List_Table')->views(); ?>
-<?php	}
+		if ( current_user_can('edit_posts') )
+			_get_list_table('WP_Comments_List_Table')->views();
 
 		wp_comment_reply( -1, false, 'dashboard', false );
 		wp_comment_trashnotice();
-
-	else :
-?>
-
-	<p><?php _e( 'No comments yet.' ); ?></p>
-
-<?php
-	endif; // $comments;
+	} else {
+		echo '<p>' . __( 'No comments yet.' ) . '</p>';
+	}
 }
 
 function _wp_dashboard_recent_comments_row( &$comment, $show_date = true ) {
@@ -1190,7 +1152,13 @@ function wp_dashboard_browser_nag() {
 			$browser_nag_class = ' has-browser-icon';
 		}
 		$notice .= "<p class='browser-update-nag{$browser_nag_class}'>{$msg}</p>";
-		$notice .= '<p>' . sprintf( __( '<a href="%1$s" class="update-browser-link">Update %2$s</a> or learn how to <a href="%3$s" class="browse-happy-link">browse happy</a>' ), esc_attr( $response['update_url'] ), esc_html( $response['name'] ), 'http://browsehappy.com/' ) . '</p>';
+
+		$browsehappy = 'http://browsehappy.com/';
+		$locale = get_locale();
+		if ( 'en_US' !== $locale )
+			$browsehappy = add_query_arg( 'locale', $locale, $browsehappy );
+
+		$notice .= '<p>' . sprintf( __( '<a href="%1$s" class="update-browser-link">Update %2$s</a> or learn how to <a href="%3$s" class="browse-happy-link">browse happy</a>' ), esc_attr( $response['update_url'] ), esc_html( $response['name'] ), esc_url( $browsehappy ) ) . '</p>';
 		$notice .= '<p class="hide-if-no-js"><a href="" class="dismiss">' . __( 'Dismiss' ) . '</a></p>';
 		$notice .= '<div class="clear"></div>';
 	}
@@ -1225,7 +1193,7 @@ function wp_check_browser_version() {
 
 		$options = array(
 			'body'			=> array( 'useragent' => $_SERVER['HTTP_USER_AGENT'] ),
-			'user-agent'	=> 'WordPress/' . $wp_version . '; ' . get_bloginfo( 'url' )
+			'user-agent'	=> 'WordPress/' . $wp_version . '; ' . home_url()
 		);
 
 		$response = wp_remote_post( 'http://api.wordpress.org/core/browse-happy/1.0/', $options );
@@ -1244,9 +1212,9 @@ function wp_check_browser_version() {
 		 *  'img_src' - string - An image representing the browser
 		 *  'img_src_ssl' - string - An image (over SSL) representing the browser
 		 */
-		$response = unserialize( wp_remote_retrieve_body( $response ) );
+		$response = maybe_unserialize( wp_remote_retrieve_body( $response ) );
 
-		if ( ! $response )
+		if ( ! is_array( $response ) )
 			return false;
 
 		set_site_transient( 'browser_' . $key, $response, 604800 ); // cache for 1 week

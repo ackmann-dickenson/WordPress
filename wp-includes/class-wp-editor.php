@@ -330,21 +330,21 @@ final class _WP_Editors {
 					$style_uri = get_stylesheet_directory_uri();
 					$style_dir = get_stylesheet_directory();
 
-					foreach ( $editor_styles as $key => $file ) {
-						if ( $file && file_exists( "$style_dir/$file" ) ) {
-							$mce_css[] = "$style_uri/$file";
-							$editor_styles[$key] = '';
-						}
-					}
-
 					if ( is_child_theme() ) {
 						$template_uri = get_template_directory_uri();
 						$template_dir = get_template_directory();
 
-						foreach ( $editor_styles as $file ) {
-							if ( $file && file_exists( "$template_dir/$file" ) )
+						foreach ( $editor_styles as $key => $file ) {
+							if ( $file && file_exists( "$template_dir/$file" ) ) {
 								$mce_css[] = "$template_uri/$file";
+								$editor_styles[$key] = '';
+							}
 						}
+					}
+
+					foreach ( $editor_styles as $file ) {
+						if ( $file && file_exists( "$style_dir/$file" ) )
+							$mce_css[] = "$style_uri/$file";
 					}
 
 					$mce_css = implode( ',', $mce_css );
@@ -618,7 +618,7 @@ final class _WP_Editors {
 		$dfw_width = get_user_setting( 'dfw_width', $width );
 		$save = isset($post->post_status) && $post->post_status == 'publish' ? __('Update') : __('Save');
 	?>
-	<div id="wp-fullscreen-body">
+	<div id="wp-fullscreen-body"<?php if ( is_rtl() ) echo ' class="rtl"'; ?>>
 	<div id="fullscreen-topbar">
 		<div id="wp-fullscreen-toolbar">
 			<div id="wp-fullscreen-close"><a href="#" onclick="fullscreen.off();return false;"><?php _e('Exit fullscreen'); ?></a></div>
@@ -669,7 +669,7 @@ final class _WP_Editors {
 
 			<div id="wp-fullscreen-save">
 				<span><?php if ( $post->post_status == 'publish' ) _e('Updated.'); else _e('Saved.'); ?></span>
-				<img src="images/wpspin_light.gif" alt="" />
+				<img src="<?php echo admin_url('images/wpspin_light.gif'); ?>" alt="" />
 				<input type="button" class="button-primary" value="<?php echo $save; ?>" onclick="fullscreen.save();" />
 			</div>
 
@@ -784,7 +784,7 @@ final class _WP_Editors {
 			<div class="link-search-wrapper">
 				<label>
 					<span><?php _e( 'Search' ); ?></span>
-					<input type="text" id="search-field" class="link-search-field" tabindex="60" autocomplete="off" />
+					<input type="search" id="search-field" class="link-search-field" tabindex="60" autocomplete="off" />
 					<img class="waiting" src="<?php echo esc_url( admin_url( 'images/wpspin_light.gif' ) ); ?>" alt="" />
 				</label>
 			</div>

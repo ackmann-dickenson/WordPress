@@ -579,7 +579,7 @@ function update_comment_meta($comment_id, $meta_key, $meta_value, $prev_value = 
  * @since 3.4.0
  */
 function wp_set_comment_cookies($comment, $user) {
-	if ( $user->ID )
+	if ( $user->exists() )
 		return;
 
 	$comment_cookie_lifetime = apply_filters('comment_cookie_lifetime', 30000000);
@@ -980,15 +980,11 @@ function wp_delete_comment($comment_id, $force_delete = false) {
 	}
 
 	// Delete metadata
-	$meta_ids = $wpdb->get_col( $wpdb->prepare( "SELECT meta_id FROM $wpdb->commentmeta WHERE comment_id = %d ", $comment_id ) );
-	if ( !empty($meta_ids) ) {
-		do_action( 'delete_commentmeta', $meta_ids );
-		$in_meta_ids = "'" . implode("', '", $meta_ids) . "'";
-		$wpdb->query( "DELETE FROM $wpdb->commentmeta WHERE meta_id IN ($in_meta_ids)" );
-		do_action( 'deleted_commentmeta', $meta_ids );
-	}
+	$meta_ids = $wpdb->get_col( $wpdb->prepare( "SELECT meta_id FROM $wpdb->commentmeta WHERE comment_id = %d", $comment_id ) );
+	foreach ( $meta_ids as $mid )
+		delete_metadata_by_mid( 'comment', $mid );
 
-	if ( ! $wpdb->query( $wpdb->prepare("DELETE FROM $wpdb->comments WHERE comment_ID = %d LIMIT 1", $comment_id) ) )
+	if ( ! $wpdb->delete( $wpdb->comments, array( 'comment_ID' => $comment_id ) ) )
 		return false;
 	do_action('deleted_comment', $comment_id);
 
@@ -1583,10 +1579,7 @@ function wp_update_comment_count_now($post_id) {
 	$new = (int) $wpdb->get_var( $wpdb->prepare("SELECT COUNT(*) FROM $wpdb->comments WHERE comment_post_ID = %d AND comment_approved = '1'", $post_id) );
 	$wpdb->update( $wpdb->posts, array('comment_count' => $new), array('ID' => $post_id) );
 
-	if ( 'page' == $post->post_type )
-		clean_page_cache( $post_id );
-	else
-		clean_post_cache( $post_id );
+	clean_post_cache( $post );
 
 	do_action('wp_update_comment_count', $post_id, $new, $old);
 	do_action('edit_post', $post_id, $post);
@@ -1816,7 +1809,7 @@ function pingback($content, $post_ID) {
 		endif;
 	endforeach;
 
-	do_action_ref_array('pre_ping', array(&$post_links, &$pung));
+	do_action_ref_array( 'pre_ping', array( &$post_links, &$pung, $post_ID ) );
 
 	foreach ( (array) $post_links as $pagelinkedto ) {
 		$pingback_server_url = discover_pingback_server_uri( $pagelinkedto );

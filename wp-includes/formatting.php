@@ -173,30 +173,6 @@ function _wptexturize_pushpop_element($text, &$stack, $disabled_elements, $openi
 }
 
 /**
- * Accepts matches array from preg_replace_callback in wpautop() or a string.
- *
- * Ensures that the contents of a <<pre>>...<</pre>> HTML block are not
- * converted into paragraphs or line-breaks.
- *
- * @since 1.2.0
- *
- * @param array|string $matches The array or string
- * @return string The pre block without paragraph/line-break conversion.
- */
-function clean_pre($matches) {
-	if ( is_array($matches) )
-		$text = $matches[1] . $matches[2] . "</pre>";
-	else
-		$text = $matches;
-
-	$text = str_replace('<br />', '', $text);
-	$text = str_replace('<p>', "\n", $text);
-	$text = str_replace('</p>', '', $text);
-
-	return $text;
-}
-
-/**
  * Replaces double line-breaks with paragraph elements.
  *
  * A group of regex replaces used to identify text formatted with newlines and
@@ -207,14 +183,42 @@ function clean_pre($matches) {
  * @since 0.71
  *
  * @param string $pee The text which has to be formatted.
- * @param int|bool $br Optional. If set, this will convert all remaining line-breaks after paragraphing. Default true.
+ * @param bool $br Optional. If set, this will convert all remaining line-breaks after paragraphing. Default true.
  * @return string Text which has been converted into correct paragraph tags.
  */
-function wpautop($pee, $br = 1) {
+function wpautop($pee, $br = true) {
+	$pre_tags = array();
 
 	if ( trim($pee) === '' )
 		return '';
+
 	$pee = $pee . "\n"; // just to make things a little easier, pad the end
+
+	if ( strpos($pee, '<pre') !== false ) {
+		$pee_parts = explode( '</pre>', $pee );
+		$last_pee = array_pop($pee_parts);
+		$pee = '';
+		$i = 0;
+
+		foreach ( $pee_parts as $pee_part ) {
+			$start = strpos($pee_part, '<pre');
+
+			// Malformed html?
+			if ( $start === false ) {
+				$pee .= $pee_part;
+				continue;
+			}
+
+			$name = "<pre wp-pre-tag-$i></pre>";
+			$pre_tags[$name] = substr( $pee_part, $start ) . '</pre>';
+
+			$pee .= substr( $pee_part, 0, $start ) . $name;
+			$i++;
+		}
+
+		$pee .= $last_pee;
+	}
+
 	$pee = preg_replace('|<br />\s*<br />|', "\n\n", $pee);
 	// Space things out a little
 	$allblocks = '(?:table|thead|tfoot|caption|col|colgroup|tbody|tr|td|th|div|dl|dd|dt|ul|ol|li|pre|select|option|form|map|area|blockquote|address|math|style|p|h[1-6]|hr|fieldset|legend|section|article|aside|hgroup|header|footer|nav|figure|figcaption|details|menu|summary)';
@@ -239,16 +243,17 @@ function wpautop($pee, $br = 1) {
 	$pee = str_replace('</blockquote></p>', '</p></blockquote>', $pee);
 	$pee = preg_replace('!<p>\s*(</?' . $allblocks . '[^>]*>)!', "$1", $pee);
 	$pee = preg_replace('!(</?' . $allblocks . '[^>]*>)\s*</p>!', "$1", $pee);
-	if ($br) {
+	if ( $br ) {
 		$pee = preg_replace_callback('/<(script|style).*?<\/\\1>/s', '_autop_newline_preservation_helper', $pee);
 		$pee = preg_replace('|(?<!<br />)\s*\n|', "<br />\n", $pee); // optionally make line breaks
 		$pee = str_replace('<WPPreserveNewline />', "\n", $pee);
 	}
 	$pee = preg_replace('!(</?' . $allblocks . '[^>]*>)\s*<br />!', "$1", $pee);
 	$pee = preg_replace('!<br />(\s*</?(?:p|li|div|dl|dd|dt|th|pre|td|ul|ol)[^>]*>)!', '$1', $pee);
-	if (strpos($pee, '<pre') !== false)
-		$pee = preg_replace_callback('!(<pre[^>]*>)(.*?)</pre>!is', 'clean_pre', $pee );
 	$pee = preg_replace( "|\n</p>$|", '</p>', $pee );
+
+	if ( !empty($pre_tags) )
+		$pee = str_replace(array_keys($pre_tags), array_values($pre_tags), $pee);
 
 	return $pee;
 }
@@ -710,7 +715,62 @@ function remove_accents($string) {
 		// Euro Sign
 		chr(226).chr(130).chr(172) => 'E',
 		// GBP (Pound) Sign
-		chr(194).chr(163) => '');
+		chr(194).chr(163) => '',
+		// Vowels with diacritic (Vietnamese)
+		// unmarked
+		chr(198).chr(160) => 'O', chr(198).chr(161) => 'o',
+		chr(198).chr(175) => 'U', chr(198).chr(176) => 'u',
+		// grave accent
+		chr(225).chr(186).chr(166) => 'A', chr(225).chr(186).chr(167) => 'a',
+		chr(225).chr(186).chr(176) => 'A', chr(225).chr(186).chr(177) => 'a',
+		chr(225).chr(187).chr(128) => 'E', chr(225).chr(187).chr(129) => 'e',
+		chr(225).chr(187).chr(146) => 'O', chr(225).chr(187).chr(147) => 'o',
+		chr(225).chr(187).chr(156) => 'O', chr(225).chr(187).chr(157) => 'o',
+		chr(225).chr(187).chr(170) => 'U', chr(225).chr(187).chr(171) => 'u',
+		chr(225).chr(187).chr(178) => 'Y', chr(225).chr(187).chr(179) => 'y',
+		// hook
+		chr(225).chr(186).chr(162) => 'A', chr(225).chr(186).chr(163) => 'a',
+		chr(225).chr(186).chr(168) => 'A', chr(225).chr(186).chr(169) => 'a',
+		chr(225).chr(186).chr(178) => 'A', chr(225).chr(186).chr(179) => 'a',
+		chr(225).chr(186).chr(186) => 'E', chr(225).chr(186).chr(187) => 'e',
+		chr(225).chr(187).chr(130) => 'E', chr(225).chr(187).chr(131) => 'e',
+		chr(225).chr(187).chr(136) => 'I', chr(225).chr(187).chr(137) => 'i',
+		chr(225).chr(187).chr(142) => 'O', chr(225).chr(187).chr(143) => 'o',
+		chr(225).chr(187).chr(148) => 'O', chr(225).chr(187).chr(149) => 'o',
+		chr(225).chr(187).chr(158) => 'O', chr(225).chr(187).chr(159) => 'o',
+		chr(225).chr(187).chr(166) => 'U', chr(225).chr(187).chr(167) => 'u',
+		chr(225).chr(187).chr(172) => 'U', chr(225).chr(187).chr(173) => 'u',
+		chr(225).chr(187).chr(182) => 'Y', chr(225).chr(187).chr(183) => 'y',
+		// tilde
+		chr(225).chr(186).chr(170) => 'A', chr(225).chr(186).chr(171) => 'a',
+		chr(225).chr(186).chr(180) => 'A', chr(225).chr(186).chr(181) => 'a',
+		chr(225).chr(186).chr(188) => 'E', chr(225).chr(186).chr(189) => 'e',
+		chr(225).chr(187).chr(132) => 'E', chr(225).chr(187).chr(133) => 'e',
+		chr(225).chr(187).chr(150) => 'O', chr(225).chr(187).chr(151) => 'o',
+		chr(225).chr(187).chr(160) => 'O', chr(225).chr(187).chr(161) => 'o',
+		chr(225).chr(187).chr(174) => 'U', chr(225).chr(187).chr(175) => 'u',
+		chr(225).chr(187).chr(184) => 'Y', chr(225).chr(187).chr(185) => 'y',
+		// acute accent
+		chr(225).chr(186).chr(164) => 'A', chr(225).chr(186).chr(165) => 'a',
+		chr(225).chr(186).chr(174) => 'A', chr(225).chr(186).chr(175) => 'a',
+		chr(225).chr(186).chr(190) => 'E', chr(225).chr(186).chr(191) => 'e',
+		chr(225).chr(187).chr(144) => 'O', chr(225).chr(187).chr(145) => 'o',
+		chr(225).chr(187).chr(154) => 'O', chr(225).chr(187).chr(155) => 'o',
+		chr(225).chr(187).chr(168) => 'U', chr(225).chr(187).chr(169) => 'u',
+		// dot below
+		chr(225).chr(186).chr(160) => 'A', chr(225).chr(186).chr(161) => 'a',
+		chr(225).chr(186).chr(172) => 'A', chr(225).chr(186).chr(173) => 'a',
+		chr(225).chr(186).chr(182) => 'A', chr(225).chr(186).chr(183) => 'a',
+		chr(225).chr(186).chr(184) => 'E', chr(225).chr(186).chr(185) => 'e',
+		chr(225).chr(187).chr(134) => 'E', chr(225).chr(187).chr(135) => 'e',
+		chr(225).chr(187).chr(138) => 'I', chr(225).chr(187).chr(139) => 'i',
+		chr(225).chr(187).chr(140) => 'O', chr(225).chr(187).chr(141) => 'o',
+		chr(225).chr(187).chr(152) => 'O', chr(225).chr(187).chr(153) => 'o',
+		chr(225).chr(187).chr(162) => 'O', chr(225).chr(187).chr(163) => 'o',
+		chr(225).chr(187).chr(164) => 'U', chr(225).chr(187).chr(165) => 'u',
+		chr(225).chr(187).chr(176) => 'U', chr(225).chr(187).chr(177) => 'u',
+		chr(225).chr(187).chr(180) => 'Y', chr(225).chr(187).chr(181) => 'y',
+		);
 
 		$string = strtr($string, $chars);
 	} else {
@@ -912,16 +972,24 @@ function sanitize_title_with_dashes($title, $raw_title = '', $context = 'display
 	$title = str_replace('.', '-', $title);
 
 	if ( 'save' == $context ) {
-		// nbsp, ndash and mdash
+		// Convert nbsp, ndash and mdash to hyphens
 		$title = str_replace( array( '%c2%a0', '%e2%80%93', '%e2%80%94' ), '-', $title );
-		// iexcl and iquest
-		$title = str_replace( array( '%c2%a1', '%c2%bf' ), '', $title );
-		// angle quotes
-		$title = str_replace( array( '%c2%ab', '%c2%bb', '%e2%80%b9', '%e2%80%ba' ), '', $title );
-		// curly quotes
-		$title = str_replace( array( '%e2%80%98', '%e2%80%99', '%e2%80%9c', '%e2%80%9d' ), '', $title );
-		// copy, reg, deg, hellip and trade
-		$title = str_replace( array( '%c2%a9', '%c2%ae', '%c2%b0', '%e2%80%a6', '%e2%84%a2' ), '', $title );
+
+		// Strip these characters entirely
+		$title = str_replace( array(
+			// iexcl and iquest
+			'%c2%a1', '%c2%bf',
+			// angle quotes
+			'%c2%ab', '%c2%bb', '%e2%80%b9', '%e2%80%ba',
+			// curly quotes
+			'%e2%80%98', '%e2%80%99', '%e2%80%9c', '%e2%80%9d',
+			'%e2%80%9a', '%e2%80%9b', '%e2%80%9e', '%e2%80%9f',
+			// copy, reg, deg, hellip and trade
+			'%c2%a9', '%c2%ae', '%c2%b0', '%e2%80%a6', '%e2%84%a2',
+		), '', $title );
+
+		// Convert times to x
+		$title = str_replace( '%c3%97', 'x', $title );
 	}
 
 	$title = preg_replace('/[^%a-z0-9 _-]/', '', $title);
@@ -1011,7 +1079,7 @@ function convert_chars($content, $deprecated = '') {
 	'&#139;' => '&#8249;',
 	'&#140;' => '&#338;',
 	'&#141;' => '',
-	'&#142;' => '&#382;',
+	'&#142;' => '&#381;',
 	'&#143;' => '',
 	'&#144;' => '',
 	'&#145;' => '&#8216;',
@@ -1027,7 +1095,7 @@ function convert_chars($content, $deprecated = '') {
 	'&#155;' => '&#8250;',
 	'&#156;' => '&#339;',
 	'&#157;' => '',
-	'&#158;' => '',
+	'&#158;' => '&#382;',
 	'&#159;' => '&#376;'
 	);
 
@@ -1334,8 +1402,6 @@ function stripslashes_deep($value) {
 /**
  * Navigates through an array and encodes the values to be used in a URL.
  *
- * Uses a callback to pass the value of the array back to the function as a
- * string.
  *
  * @since 2.2.0
  *
@@ -1345,6 +1411,18 @@ function stripslashes_deep($value) {
 function urlencode_deep($value) {
 	$value = is_array($value) ? array_map('urlencode_deep', $value) : urlencode($value);
 	return $value;
+}
+
+/**
+ * Navigates through an array and raw encodes the values to be used in a URL.
+ *
+ * @since 3.4.0
+ *
+ * @param array|string $value The array or string to be encoded.
+ * @return array|string $value The encoded array (or string from the callback).
+ */
+function rawurlencode_deep( $value ) {
+	return is_array( $value ) ? array_map( 'rawurlencode_deep', $value ) : rawurlencode( $value );
 }
 
 /**
@@ -1463,49 +1541,59 @@ function _make_email_clickable_cb($matches) {
  *
  * @since 0.71
  *
- * @param string $ret Content to convert URIs.
+ * @param string $text Content to convert URIs.
  * @return string Content with converted URIs.
  */
-function make_clickable( $ret ) {
-	// Long strings might contain expensive edge cases ...
-	if ( 10000 < strlen( $ret ) ) {
-		$r = '';
-		// ... break it up
-		foreach ( _split_str_by_whitespace( $ret, 2100 ) as $chunk ) { // 2100: Extra room for scheme and leading and trailing paretheses
-			if ( 2101 < strlen( $chunk ) ) {
-				$r .= $chunk; // Too big, no whitespace: bail.
-			} else {
-				$r .= make_clickable( $chunk );
-			}
+function make_clickable( $text ) {
+	$r = '';
+	$textarr = preg_split( '/(<[^<>]+>)/', $text, -1, PREG_SPLIT_DELIM_CAPTURE ); // split out HTML tags
+	foreach ( $textarr as $piece ) {
+		if ( empty( $piece ) || ( $piece[0] == '<' && ! preg_match('|^<\s*[\w]{1,20}+://|', $piece) ) ) {
+			$r .= $piece;
+			continue;
 		}
-		return $r;
+
+		// Long strings might contain expensive edge cases ...
+		if ( 10000 < strlen( $piece ) ) {
+			// ... break it up
+			foreach ( _split_str_by_whitespace( $piece, 2100 ) as $chunk ) { // 2100: Extra room for scheme and leading and trailing paretheses
+				if ( 2101 < strlen( $chunk ) ) {
+					$r .= $chunk; // Too big, no whitespace: bail.
+				} else {
+					$r .= make_clickable( $chunk );
+				}
+			}
+		} else {
+			$ret = " $piece "; // Pad with whitespace to simplify the regexes
+
+			$url_clickable = '~
+				([\\s(<.,;:!?])                                        # 1: Leading whitespace, or punctuation
+				(                                                      # 2: URL
+					[\\w]{1,20}+://                                # Scheme and hier-part prefix
+					(?=\S{1,2000}\s)                               # Limit to URLs less than about 2000 characters long
+					[\\w\\x80-\\xff#%\\~/@\\[\\]*(+=&$-]*+         # Non-punctuation URL character
+					(?:                                            # Unroll the Loop: Only allow puctuation URL character if followed by a non-punctuation URL character
+						[\'.,;:!?)]                            # Punctuation URL character
+						[\\w\\x80-\\xff#%\\~/@\\[\\]*(+=&$-]++ # Non-punctuation URL character
+					)*
+				)
+				(\)?)                                                  # 3: Trailing closing parenthesis (for parethesis balancing post processing)
+			~xS'; // The regex is a non-anchored pattern and does not have a single fixed starting character.
+			      // Tell PCRE to spend more time optimizing since, when used on a page load, it will probably be used several times.
+
+			$ret = preg_replace_callback( $url_clickable, '_make_url_clickable_cb', $ret );
+
+			$ret = preg_replace_callback( '#([\s>])((www|ftp)\.[\w\\x80-\\xff\#$%&~/.\-;:=,?@\[\]+]+)#is', '_make_web_ftp_clickable_cb', $ret );
+			$ret = preg_replace_callback( '#([\s>])([.0-9a-z_+-]+)@(([0-9a-z-]+\.)+[0-9a-z]{2,})#i', '_make_email_clickable_cb', $ret );
+
+			$ret = substr( $ret, 1, -1 ); // Remove our whitespace padding.
+			$r .= $ret;
+		}
 	}
 
-	$ret = " $ret "; // Pad with whitespace to simplify the regexes
-
-	$url_clickable = '~
-		([\\s(<.,;:!?])                                        # 1: Leading whitespace, or punctuation
-		(                                                      # 2: URL
-			[\\w]{1,20}+://                                # Scheme and hier-part prefix
-			(?=\S{1,2000}\s)                               # Limit to URLs less than about 2000 characters long
-			[\\w\\x80-\\xff#%\\~/@\\[\\]*(+=&$-]*+         # Non-punctuation URL character
-			(?:                                            # Unroll the Loop: Only allow puctuation URL character if followed by a non-punctuation URL character
-				[\'.,;:!?)]                            # Punctuation URL character
-				[\\w\\x80-\\xff#%\\~/@\\[\\]*(+=&$-]++ # Non-punctuation URL character
-			)*
-		)
-		(\)?)                                                  # 3: Trailing closing parenthesis (for parethesis balancing post processing)
-	~xS'; // The regex is a non-anchored pattern and does not have a single fixed starting character.
-	      // Tell PCRE to spend more time optimizing since, when used on a page load, it will probably be used several times.
-
-	$ret = preg_replace_callback( $url_clickable, '_make_url_clickable_cb', $ret );
-
-	$ret = preg_replace_callback('#([\s>])((www|ftp)\.[\w\\x80-\\xff\#$%&~/.\-;:=,?@\[\]+]+)#is', '_make_web_ftp_clickable_cb', $ret);
-	$ret = preg_replace_callback('#([\s>])([.0-9a-z_+-]+)@(([0-9a-z-]+\.)+[0-9a-z]{2,})#i', '_make_email_clickable_cb', $ret);
-
 	// Cleanup of accidental links within links
-	$ret = preg_replace("#(<a( [^>]+?>|>))<a [^>]+?>([^>]+?)</a></a>#i", "$1$3</a>", $ret);
-	return substr( $ret, 1, -1 ); // Remove our whitespace padding.
+	$r = preg_replace( '#(<a( [^>]+?>|>))<a [^>]+?>([^>]+?)</a></a>#i', "$1$3</a>", $r );
+	return $r;
 }
 
 /**
@@ -2039,6 +2127,10 @@ function wp_trim_excerpt($text = '') {
 /**
  * Trims text to a certain number of words.
  *
+ * This function is localized. For languages that count 'words' by the individual
+ * character (such as East Asian languages), the $num_words argument will apply
+ * to the number of individual characters.
+ *
  * @since 3.3.0
  *
  * @param string $text Text to trim.
@@ -2051,13 +2143,23 @@ function wp_trim_words( $text, $num_words = 55, $more = null ) {
 		$more = __( '&hellip;' );
 	$original_text = $text;
 	$text = wp_strip_all_tags( $text );
-	$words_array = preg_split( "/[\n\r\t ]+/", $text, $num_words + 1, PREG_SPLIT_NO_EMPTY );
+	/* translators: If your word count is based on single characters (East Asian characters),
+	   enter 'characters'. Otherwise, enter 'words'. Do not translate into your own language. */
+	if ( 'characters' == _x( 'words', 'word count: words or characters?' ) && preg_match( '/^utf\-?8$/i', get_option( 'blog_charset' ) ) ) {
+		$text = trim( preg_replace( "/[\n\r\t ]+/", ' ', $text ), ' ' );
+		preg_match_all( '/./u', $text, $words_array );
+		$words_array = array_slice( $words_array[0], 0, $num_words + 1 );
+		$sep = '';
+	} else {
+		$words_array = preg_split( "/[\n\r\t ]+/", $text, $num_words + 1, PREG_SPLIT_NO_EMPTY );
+		$sep = ' ';
+	}
 	if ( count( $words_array ) > $num_words ) {
 		array_pop( $words_array );
-		$text = implode( ' ', $words_array );
+		$text = implode( $sep, $words_array );
 		$text = $text . $more;
 	} else {
-		$text = implode( ' ', $words_array );
+		$text = implode( $sep, $words_array );
 	}
 	return apply_filters( 'wp_trim_words', $text, $num_words, $more, $original_text );
 }
@@ -2966,9 +3068,9 @@ function _links_add_base($m) {
 	global $_links_add_base;
 	//1 = attribute name  2 = quotation mark  3 = URL
 	return $m[1] . '=' . $m[2] .
-		(strpos($m[3], 'http://') === false ?
-			path_join($_links_add_base, $m[3]) :
-			$m[3])
+		( preg_match( '#^(\w{1,20}):#', $m[3], $protocol ) && in_array( $protocol[1], wp_allowed_protocols() ) ?
+			$m[3] :
+			path_join( $_links_add_base, $m[3] ) )
 		. $m[2];
 }
 
@@ -3034,7 +3136,7 @@ function wp_strip_all_tags($string, $remove_breaks = false) {
 	if ( $remove_breaks )
 		$string = preg_replace('/[\r\n\t ]+/', ' ', $string);
 
-	return trim($string);
+	return trim( $string );
 }
 
 /**

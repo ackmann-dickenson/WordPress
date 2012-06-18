@@ -150,15 +150,19 @@ function wp_ajax_oembed_cache() {
 }
 
 function wp_ajax_autocomplete_user() {
-	if ( ! is_multisite()
-		|| ! current_user_can( 'promote_users' )
-		|| wp_is_large_network( 'users' )
-		|| ( ! is_super_admin() && ! apply_filters( 'autocomplete_users_for_site_admins', false ) )
-	) {
+	if ( ! is_multisite() || ! current_user_can( 'promote_users' ) || wp_is_large_network( 'users' ) )
 		wp_die( -1 );
-	}
+
+	if ( ! is_super_admin() && ! apply_filters( 'autocomplete_users_for_site_admins', false ) )
+		wp_die( -1 );
 
 	$return = array();
+
+	// Check the type of request
+	if ( isset( $_REQUEST['autocomplete_type'] ) )
+		$type = $_REQUEST['autocomplete_type'];
+	else
+		$type = 'add';
 
 	// Exclude current users of this blog
 	if ( isset( $_REQUEST['site_id'] ) )
@@ -166,12 +170,14 @@ function wp_ajax_autocomplete_user() {
 	else
 		$id = get_current_blog_id();
 
-	$this_blog_users = get_users( array( 'blog_id' => $id, 'fields' => 'ID' ) );
+	$include_blog_users = ( $type == 'search' ? get_users( array( 'blog_id' => $id, 'fields' => 'ID' ) ) : array() );
+	$exclude_blog_users = ( $type == 'add' ? get_users( array( 'blog_id' => $id, 'fields' => 'ID' ) ) : array() );
 
 	$users = get_users( array(
 		'blog_id' => false,
 		'search'  => '*' . $_REQUEST['term'] . '*',
-		'exclude' => $this_blog_users,
+		'include' => $include_blog_users,
+		'exclude' => $exclude_blog_users,
 		'search_columns' => array( 'user_login', 'user_nicename', 'user_email' ),
 	) );
 
@@ -184,6 +190,30 @@ function wp_ajax_autocomplete_user() {
 	}
 
 	wp_die( json_encode( $return ) );
+}
+
+function wp_ajax_dashboard_widgets() {
+	require ABSPATH . 'wp-admin/includes/dashboard.php';
+
+	switch ( $_GET['widget'] ) {
+		case 'dashboard_incoming_links' :
+			wp_dashboard_incoming_links();
+			break;
+		case 'dashboard_primary' :
+			wp_dashboard_primary();
+			break;
+		case 'dashboard_secondary' :
+			wp_dashboard_secondary();
+			break;
+		case 'dashboard_plugins' :
+			wp_dashboard_plugins();
+			break;
+	}
+	wp_die();
+}
+
+function wp_ajax_logged_in() {
+	wp_die( 1 );
 }
 
 /*
@@ -253,7 +283,8 @@ function _wp_ajax_delete_comment_response( $comment_id, $delta = -1 ) {
  * POST-based Ajax handlers.
  */
 
-function _wp_ajax_add_hierarchical_term( $action ) {
+function _wp_ajax_add_hierarchical_term() {
+	$action = $_POST['action'];
 	$taxonomy = get_taxonomy(substr($action, 4));
 	check_ajax_referer( $action, '_ajax_nonce-add-' . $taxonomy->name );
 	if ( !current_user_can( $taxonomy->cap->edit_terms ) )
@@ -426,6 +457,8 @@ function wp_ajax_delete_meta() {
 }
 
 function wp_ajax_delete_post( $action ) {
+	if ( empty( $action ) )
+		$action = 'delete-post';
 	$id = isset( $_POST['id'] ) ? (int) $_POST['id'] : 0;
 
 	check_ajax_referer( "{$action}_$id" );
@@ -442,6 +475,8 @@ function wp_ajax_delete_post( $action ) {
 }
 
 function wp_ajax_trash_post( $action ) {
+	if ( empty( $action ) )
+		$action = 'trash-post';
 	$id = isset( $_POST['id'] ) ? (int) $_POST['id'] : 0;
 
 	check_ajax_referer( "{$action}_$id" );
@@ -463,10 +498,14 @@ function wp_ajax_trash_post( $action ) {
 }
 
 function wp_ajax_untrash_post( $action ) {
+	if ( empty( $action ) )
+		$action = 'untrash-post';
 	wp_ajax_trash_post( $action );
 }
 
 function wp_ajax_delete_page( $action ) {
+	if ( empty( $action ) )
+		$action = 'delete-page';
 	$id = isset( $_POST['id'] ) ? (int) $_POST['id'] : 0;
 
 	check_ajax_referer( "{$action}_$id" );
@@ -520,6 +559,8 @@ function wp_ajax_dim_comment() {
 }
 
 function wp_ajax_add_link_category( $action ) {
+	if ( empty( $action ) )
+		$action = 'add-link-category';
 	check_ajax_referer( $action );
 	if ( !current_user_can( 'manage_categories' ) )
 		wp_die( -1 );
@@ -640,6 +681,8 @@ function wp_ajax_get_tagcloud() {
 
 function wp_ajax_get_comments( $action ) {
 	global $wp_list_table, $post_id;
+	if ( empty( $action ) )
+		$action = 'get-comments';
 
 	check_ajax_referer( $action );
 
@@ -675,6 +718,8 @@ function wp_ajax_get_comments( $action ) {
 
 function wp_ajax_replyto_comment( $action ) {
 	global $wp_list_table, $wpdb;
+	if ( empty( $action ) )
+		$action = 'replyto-comment';
 
 	check_ajax_referer( $action, '_ajax_nonce-replyto-comment' );
 
@@ -692,7 +737,7 @@ function wp_ajax_replyto_comment( $action ) {
 		wp_die( __('ERROR: you are replying to a comment on a draft post.') );
 
 	$user = wp_get_current_user();
-	if ( $user->ID ) {
+	if ( $user->exists() ) {
 		$user_ID = $user->ID;
 		$comment_author       = $wpdb->escape($user->display_name);
 		$comment_author_email = $wpdb->escape($user->user_email);
@@ -958,6 +1003,8 @@ function wp_ajax_add_meta() {
 
 function wp_ajax_add_user( $action ) {
 	global $wp_list_table;
+	if ( empty( $action ) )
+		$action = 'add-user';
 
 	check_ajax_referer( $action );
 	if ( ! current_user_can('create_users') )
@@ -1541,6 +1588,58 @@ function wp_ajax_save_widget() {
 	if ( $form = $wp_registered_widget_controls[$widget_id] )
 		call_user_func_array( $form['callback'], $form['params'] );
 
+	wp_die();
+}
+
+function wp_ajax_upload_attachment() {
+	check_ajax_referer( 'media-form' );
+
+	if ( ! current_user_can( 'upload_files' ) )
+		wp_die( -1 );
+
+	if ( isset( $_REQUEST['post_id'] ) ) {
+		$post_id = $_REQUEST['post_id'];
+		if ( ! current_user_can( 'edit_post', $post_id ) )
+			wp_die( -1 );
+	} else {
+		$post_id = null;
+	}
+
+	$post_data = isset( $_REQUEST['post_data'] ) ? $_REQUEST['post_data'] : array();
+
+	$attachment_id = media_handle_upload( 'async-upload', $post_id, $post_data );
+
+	if ( is_wp_error( $attachment_id ) ) {
+		echo json_encode( array(
+			'type' => 'error',
+			'data' => array(
+				'message'  => $attachment_id->get_error_message(),
+				'filename' => $_FILES['async-upload']['name'],
+			),
+		) );
+		wp_die();
+	}
+
+	if ( isset( $post_data['context'] ) && isset( $post_data['theme'] ) ) {
+		if ( 'custom-background' === $post_data['context'] )
+			update_post_meta( $attachment_id, '_wp_attachment_is_custom_background', $post_data['theme'] );
+
+		if ( 'custom-header' === $post_data['context'] )
+			update_post_meta( $attachment_id, '_wp_attachment_is_custom_header', $post_data['theme'] );
+	}
+
+	$post = get_post( $attachment_id );
+
+	echo json_encode( array(
+		'type' => 'success',
+		'data' => array(
+			'id'       => $attachment_id,
+			'title'    => esc_attr( $post->post_title ),
+			'filename' => esc_html( basename( $post->guid ) ),
+			'url'      => wp_get_attachment_url( $attachment_id ),
+			'meta'     => wp_get_attachment_metadata( $attachment_id ),
+		),
+	) );
 	wp_die();
 }
 

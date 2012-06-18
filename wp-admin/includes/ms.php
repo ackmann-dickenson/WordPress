@@ -89,7 +89,8 @@ function wpmu_delete_blog( $blog_id, $drop = false ) {
 			$wpdb->query( "DROP TABLE IF EXISTS `$table`" );
 		}
 
-		$wpdb->query( $wpdb->prepare( "DELETE FROM $wpdb->blogs WHERE blog_id = %d", $blog_id ) );
+		$wpdb->delete( $wpdb->blogs, array( 'blog_id' => $blog_id ) );
+
 		$dir = apply_filters( 'wpmu_delete_blog_upload_dir', WP_CONTENT_DIR . "/blogs.dir/{$blog_id}/files/", $blog_id );
 		$dir = rtrim( $dir, DIRECTORY_SEPARATOR );
 		$top_dir = $dir;
@@ -131,6 +132,7 @@ function wpmu_delete_user( $id ) {
 	global $wpdb;
 
 	$id = (int) $id;
+	$user = new WP_User( $id );
 
 	do_action( 'wpmu_delete_user', $id );
 
@@ -158,10 +160,13 @@ function wpmu_delete_user( $id ) {
 		}
 	}
 
-	$wpdb->query( $wpdb->prepare( "DELETE FROM $wpdb->users WHERE ID = %d", $id ) );
-	$wpdb->query( $wpdb->prepare( "DELETE FROM $wpdb->usermeta WHERE user_id = %d", $id ) );
+	$meta = $wpdb->get_col( $wpdb->prepare( "SELECT umeta_id FROM $wpdb->usermeta WHERE user_id = %d", $id ) );
+	foreach ( $meta as $mid )
+		delete_metadata_by_mid( 'user', $mid );
 
-	clean_user_cache( $id );
+	$wpdb->delete( $wpdb->users, array( 'ID' => $id ) );
+
+	clean_user_cache( $user );
 
 	// allow for commit transaction
 	do_action( 'deleted_user', $id );
@@ -374,7 +379,7 @@ function upload_space_setting( $id ) {
 	?>
 	<tr>
 		<th><?php _e( 'Site Upload Space Quota '); ?></th>
-		<td><input type="text" size="3" name="option[blog_upload_space]" value="<?php echo $quota; ?>" /> <?php _e( 'MB (Leave blank for network default)' ); ?></td>
+		<td><input type="number" step="1" min="0" style="width: 100px" name="option[blog_upload_space]" value="<?php echo $quota; ?>" /> <?php _e( 'MB (Leave blank for network default)' ); ?></td>
 	</tr>
 	<?php
 }
@@ -388,7 +393,8 @@ function update_user_status( $id, $pref, $value, $deprecated = null ) {
 
 	$wpdb->update( $wpdb->users, array( $pref => $value ), array( 'ID' => $id ) );
 
-	clean_user_cache( $id );
+	$user = new WP_User( $id );
+	clean_user_cache( $user );
 
 	if ( $pref == 'spam' ) {
 		if ( $value == 1 )
@@ -406,7 +412,7 @@ function refresh_user_details( $id ) {
 	if ( !$user = get_userdata( $id ) )
 		return false;
 
-	clean_user_cache( $id );
+	clean_user_cache( $user );
 
 	return $id;
 }

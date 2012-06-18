@@ -66,6 +66,13 @@ function redirect_canonical( $requested_url = null, $do_redirect = true ) {
 	if ( !isset($redirect['query']) )
 		$redirect['query'] = '';
 
+	if ( is_feed() && ( $id = get_query_var( 'p' ) ) ) {
+		if ( $redirect_url = get_post_comments_feed_link( $id, get_query_var( 'feed' ) ) ) {
+			$redirect['query'] = _remove_qs_args_if_not_in_url( $redirect['query'], array( 'p', 'page_id', 'attachment_id', 'pagename', 'name', 'post_type', 'feed'), $redirect_url );
+			$redirect['path'] = parse_url( $redirect_url, PHP_URL_PATH );
+		}
+	}
+
 	if ( is_singular() && 1 > $wp_query->post_count && ($id = get_query_var('p')) ) {
 
 		$vars = $wpdb->get_results( $wpdb->prepare("SELECT post_type, post_parent FROM $wpdb->posts WHERE ID = %d", $id) );
@@ -75,7 +82,7 @@ function redirect_canonical( $requested_url = null, $do_redirect = true ) {
 				$id = $vars->post_parent;
 
 			if ( $redirect_url = get_permalink($id) )
-				$redirect['query'] = remove_query_arg(array('p', 'page_id', 'attachment_id', 'post_type'), $redirect['query']);
+				$redirect['query'] = _remove_qs_args_if_not_in_url( $redirect['query'], array( 'p', 'page_id', 'attachment_id', 'pagename', 'name', 'post_type' ), $redirect_url );
 		}
 	}
 
@@ -88,12 +95,15 @@ function redirect_canonical( $requested_url = null, $do_redirect = true ) {
 			$post_type_obj = get_post_type_object($redirect_post->post_type);
 			if ( $post_type_obj->public ) {
 				$redirect_url = get_permalink($redirect_post);
-				$redirect['query'] = remove_query_arg(array('p', 'page_id', 'attachment_id', 'post_type'), $redirect['query']);
+				$redirect['query'] = _remove_qs_args_if_not_in_url( $redirect['query'], array( 'p', 'page_id', 'attachment_id', 'pagename', 'name', 'post_type' ), $redirect_url );
 			}
 		}
 
-		if ( ! $redirect_url )
-			$redirect_url = redirect_guess_404_permalink( $requested_url );
+		if ( ! $redirect_url ) {
+			if ( $redirect_url = redirect_guess_404_permalink( $requested_url ) ) {
+				$redirect['query'] = _remove_qs_args_if_not_in_url( $redirect['query'], array( 'page', 'feed', 'p', 'page_id', 'attachment_id', 'pagename', 'name', 'post_type' ), $redirect_url );
+			}
+		}
 
 	} elseif ( is_object($wp_rewrite) && $wp_rewrite->using_permalinks() ) {
 		// rewriting of old ?p=X, ?m=2004, ?m=200401, ?m=20040101
@@ -199,7 +209,9 @@ function redirect_canonical( $requested_url = null, $do_redirect = true ) {
 		}
 
 		// Post Paging
-		if ( is_singular() && get_query_var('page') && $redirect_url ) {
+		if ( is_singular() && ! is_front_page() && get_query_var('page') ) {
+			if ( !$redirect_url )
+				$redirect_url = get_permalink( get_queried_object_id() );
 			$redirect_url = trailingslashit( $redirect_url ) . user_trailingslashit( get_query_var( 'page' ), 'single_paged' );
 			$redirect['query'] = remove_query_arg( 'page', $redirect['query'] );
 		}
@@ -216,7 +228,7 @@ function redirect_canonical( $requested_url = null, $do_redirect = true ) {
 			$addl_path = '';
 			if ( is_feed() && in_array( get_query_var('feed'), $wp_rewrite->feeds ) ) {
 				$addl_path = !empty( $addl_path ) ? trailingslashit($addl_path) : '';
-				if ( get_query_var( 'withcomments' ) )
+				if ( !is_singular() && get_query_var( 'withcomments' ) )
 					$addl_path .= 'comments/';
 				if ( ( 'rss' == get_default_feed() && 'feed' == get_query_var('feed') ) || 'rss' == get_query_var('feed') )
 					$addl_path .= user_trailingslashit( 'feed/' . ( ( get_default_feed() == 'rss2' ) ? '' : 'rss2' ), 'feed' );
@@ -265,6 +277,15 @@ function redirect_canonical( $requested_url = null, $do_redirect = true ) {
 				$redirect['path'] = trailingslashit($redirect['path']) . $addl_path;
 			$redirect_url = $redirect['scheme'] . '://' . $redirect['host'] . $redirect['path'];
 		}
+
+		if ( 'wp-register.php' == basename( $redirect['path'] ) ) {
+			if ( is_multisite() )
+				$redirect_url = apply_filters( 'wp_signup_location', site_url( 'wp-signup.php' ) );
+			else
+				$redirect_url = site_url( 'wp-login.php?action=register' );
+			wp_redirect( $redirect_url, 301 );
+			die();
+		}
 	}
 
 	// tack on any additional query vars
@@ -280,7 +301,7 @@ function redirect_canonical( $requested_url = null, $do_redirect = true ) {
 				unset( $_parsed_query['name'] );
 		}
 
-		$_parsed_query = array_map( 'rawurlencode', $_parsed_query );
+		$_parsed_query = rawurlencode_deep( $_parsed_query );
 		$redirect_url = add_query_arg( $_parsed_query, $redirect_url );
 	}
 
@@ -417,6 +438,29 @@ function redirect_canonical( $requested_url = null, $do_redirect = true ) {
 }
 
 /**
+ * Removes arguments from a query string if they are not present in a URL
+ * DO NOT use this in plugin code.
+ *
+ * @since 3.4
+ * @access private
+ *
+ * @return string The altered query string
+ */
+function _remove_qs_args_if_not_in_url( $query_string, Array $args_to_check, $url ) {
+	$parsed_url = @parse_url( $url );
+	if ( ! empty( $parsed_url['query'] ) ) {
+		parse_str( $parsed_url['query'], $parsed_query );
+		foreach ( $args_to_check as $qv ) {
+			if ( !isset( $parsed_query[$qv] ) )
+				$query_string = remove_query_arg( $qv, $query_string );
+		}
+	} else {
+		$query_string = remove_query_arg( $args_to_check, $query_string );
+	}
+	return $query_string;
+}
+
+/**
  * Attempts to guess the correct URL from the current URL (that produced a 404) or
  * the current query variables.
  *
@@ -448,6 +492,9 @@ function redirect_guess_404_permalink( $current_url = '' ) {
 		// if any of post_type, year, monthnum, or day are set, use them to refine the query
 		if ( get_query_var('post_type') )
 			$where .= $wpdb->prepare(" AND post_type = %s", get_query_var('post_type'));
+		else
+			$where .= " AND post_type IN ('" . implode( "', '", get_post_types( array( 'public' => true ) ) ) . "')";
+
 		if ( get_query_var('year') )
 			$where .= $wpdb->prepare(" AND YEAR(post_date) = %d", get_query_var('year'));
 		if ( get_query_var('monthnum') )
@@ -458,7 +505,12 @@ function redirect_guess_404_permalink( $current_url = '' ) {
 		$post_id = $wpdb->get_var("SELECT ID FROM $wpdb->posts WHERE $where AND post_status = 'publish'");
 		if ( ! $post_id )
 			return false;
-		return get_permalink( $post_id );
+		if ( get_query_var( 'feed' ) )
+			return get_post_comments_feed_link( $post_id, get_query_var( 'feed' ) );
+		elseif ( get_query_var( 'page' ) )
+			return trailingslashit( get_permalink( $post_id ) ) . user_trailingslashit( get_query_var( 'page' ), 'single_paged' );
+		else
+			return get_permalink( $post_id );
 	}
 
 	return false;

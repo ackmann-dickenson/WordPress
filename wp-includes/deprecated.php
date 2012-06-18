@@ -2933,7 +2933,11 @@ function get_themes() {
 	$wp_themes = array();
 
 	foreach ( $themes as $theme ) {
-		$wp_themes[ $theme->get('Name') ] = $theme;
+		$name = $theme->get('Name');
+		if ( isset( $wp_themes[ $name ] ) )
+			$wp_themes[ $name . '/' . $theme->get_stylesheet() ] = $theme;
+		else
+			$wp_themes[ $name ] = $theme;
 	}
 
 	return $wp_themes;
@@ -2951,7 +2955,7 @@ function get_themes() {
  * @return array|null Null, if theme name does not exist. Theme data, if exists.
  */
 function get_theme( $theme ) {
-	_deprecated_function( __FUNCTION__, '3.4', 'wp_get_theme($stylesheet)' );
+	_deprecated_function( __FUNCTION__, '3.4', 'wp_get_theme( $stylesheet )' );
 
 	$themes = get_themes();
 	if ( is_array( $themes ) && array_key_exists( $theme, $themes ) )
@@ -2976,4 +2980,179 @@ function get_current_theme() {
 		return $theme;
 
 	return wp_get_theme()->get('Name');
+}
+
+/**
+ * Accepts matches array from preg_replace_callback in wpautop() or a string.
+ *
+ * Ensures that the contents of a <<pre>>...<</pre>> HTML block are not
+ * converted into paragraphs or line-breaks.
+ *
+ * @since 1.2.0
+ * @deprecated 3.4.0
+ *
+ * @param array|string $matches The array or string
+ * @return string The pre block without paragraph/line-break conversion.
+ */
+function clean_pre($matches) {
+	_deprecated_function( __FUNCTION__, '3.4' );
+
+	if ( is_array($matches) )
+		$text = $matches[1] . $matches[2] . "</pre>";
+	else
+		$text = $matches;
+
+	$text = str_replace(array('<br />', '<br/>', '<br>'), array('', '', ''), $text);
+	$text = str_replace('<p>', "\n", $text);
+	$text = str_replace('</p>', '', $text);
+
+	return $text;
+}
+
+
+/**
+ * Add callbacks for image header display.
+ *
+ * @since 2.1.0
+ * @deprecated 3.4.0
+ * @deprecated Use add_theme_support('custom-header', $args)
+ * @see add_theme_support()
+ *
+ * @param callback $wp_head_callback Call on 'wp_head' action.
+ * @param callback $admin_head_callback Call on custom header administration screen.
+ * @param callback $admin_preview_callback Output a custom header image div on the custom header administration screen. Optional.
+ */
+function add_custom_image_header( $wp_head_callback, $admin_head_callback, $admin_preview_callback = '' ) {
+	_deprecated_function( __FUNCTION__, '3.4', 'add_theme_support( \'custom-header\', $args )' );
+	$args = array(
+		'wp-head-callback'    => $wp_head_callback,
+		'admin-head-callback' => $admin_head_callback,
+	);
+	if ( $admin_preview_callback )
+		$args['admin-preview-callback'] = $admin_preview_callback;
+	return add_theme_support( 'custom-header', $args );
+}
+
+/**
+ * Remove image header support.
+ *
+ * @since 3.1.0
+ * @deprecated 3.4.0
+ * @deprecated Use remove_theme_support('custom-header')
+ * @see remove_theme_support()
+ *
+ * @return bool Whether support was removed.
+ */
+function remove_custom_image_header() {
+	_deprecated_function( __FUNCTION__, '3.4', 'remove_theme_support( \'custom-header\' )' );
+	return remove_theme_support( 'custom-header' );
+}
+
+/**
+ * Add callbacks for background image display.
+ *
+ * @since 3.0.0
+ * @deprecated 3.4.0
+ * @deprecated Use add_theme_support('custom-background, $args)
+ * @see add_theme_support()
+ *
+ * @param callback $wp_head_callback Call on 'wp_head' action.
+ * @param callback $admin_head_callback Call on custom background administration screen.
+ * @param callback $admin_preview_callback Output a custom background image div on the custom background administration screen. Optional.
+ */
+function add_custom_background( $wp_head_callback = '', $admin_head_callback = '', $admin_preview_callback = '' ) {
+	_deprecated_function( __FUNCTION__, '3.4', 'add_theme_support( \'custom-background\', $args )' );
+	$args = array();
+	if ( $wp_head_callback )
+		$args['wp-head-callback'] = $wp_head_callback;
+	if ( $admin_head_callback )
+		$args['admin-head-callback'] = $admin_head_callback;
+	if ( $admin_preview_callback )
+		$args['admin-preview-callback'] = $admin_preview_callback;
+	return add_theme_support( 'custom-background', $args );
+}
+
+/**
+ * Remove custom background support.
+ *
+ * @since 3.1.0
+ * @see add_custom_background()
+ *
+ * @return bool Whether support was removed.
+ */
+function remove_custom_background() {
+	_deprecated_function( __FUNCTION__, '3.4', 'remove_theme_support( \'custom-background\' )' );
+	return remove_theme_support( 'custom-background' );
+}
+
+/**
+ * Retrieve theme data from parsed theme file.
+ *
+ * @since 1.5.0
+ * @deprecated 3.4.0
+ * @deprecated Use wp_get_theme()
+ * @see wp_get_theme()
+ *
+ * @param string $theme_file Theme file path.
+ * @return array Theme data.
+ */
+function get_theme_data( $theme_file ) {
+	_deprecated_function( __FUNCTION__, 3.4, 'wp_get_theme()' );
+	$theme = new WP_Theme( basename( dirname( $theme_file ) ), dirname( dirname( $theme_file ) ) );
+
+	$theme_data = array(
+		'Name' => $theme->get('Name'),
+		'URI' => $theme->display('ThemeURI', true, false),
+		'Description' => $theme->display('Description', true, false),
+		'Author' => $theme->display('Author', true, false),
+		'AuthorURI' => $theme->display('AuthorURI', true, false),
+		'Version' => $theme->get('Version'),
+		'Template' => $theme->get('Template'),
+		'Status' => $theme->get('Status'),
+		'Tags' => $theme->get('Tags'),
+		'Title' => $theme->get('Name'),
+		'AuthorName' => $theme->get('Author'),
+	);
+
+	foreach ( apply_filters( 'extra_theme_headers', array() ) as $extra_header ) {
+		if ( ! isset( $theme_data[ $extra_header ] ) )
+			$theme_data[ $extra_header ] = $theme->get( $extra_header );
+	}
+
+	return $theme_data;
+}
+
+/**
+ * Alias of update_post_cache().
+ *
+ * @see update_post_cache() Posts and pages are the same, alias is intentional
+ *
+ * @since 1.5.1
+ * @deprecated 3.4.0
+ *
+ * @param array $pages list of page objects
+ */
+function update_page_cache( &$pages ) {
+	_deprecated_function( __FUNCTION__, 3.4, 'update_post_cache()' );
+
+	update_post_cache( $pages );
+}
+
+/**
+ * Will clean the page in the cache.
+ *
+ * Clean (read: delete) page from cache that matches $id. Will also clean cache
+ * associated with 'all_page_ids' and 'get_pages'.
+ *
+ * @since 2.0.0
+ * @deprecated 3.4.0
+ *
+ * @uses do_action() Will call the 'clean_page_cache' hook action.
+ *
+ * @param int $id Page ID to clean
+ */
+function clean_page_cache( $id ) {
+	_deprecated_function( __FUNCTION__, 3.4, 'clean_post_cache()' );
+
+	clean_post_cache( $id );
 }

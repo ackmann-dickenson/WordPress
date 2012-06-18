@@ -2,7 +2,7 @@ if ( typeof wp === 'undefined' )
 	var wp = {};
 
 (function( exports, $ ){
-	var api, extend, ctor, inherits, ready,
+	var api, extend, ctor, inherits,
 		slice = Array.prototype.slice;
 
 	/* =====================================================================
@@ -66,34 +66,7 @@ if ( typeof wp === 'undefined' )
 		return child;
 	};
 
-	/* =====================================================================
-	 * customize function.
-	 * ===================================================================== */
-	ready = $.Callbacks( 'once memory' );
-
-	/*
-	 * Sugar for main customize function. Supports several signatures.
-	 *
-	 * customize( callback, [context] );
-	 *   Binds a callback to be fired when the customizer is ready.
-	 *   - callback, function
-	 *   - context, object
-	 *
-	 * customize( setting );
-	 *   Fetches a setting object by ID.
-	 *   - setting, string - The setting ID.
-	 *
-	 */
 	api = {};
-	// api = function( callback, context ) {
-	// 	if ( $.isFunction( callback ) ) {
-	// 		if ( context )
-	// 			callback = $.proxy( callback, context );
-	// 		ready.add( callback );
-	//
-	// 		return api;
-	// 	}
-	// }
 
 	/* =====================================================================
 	 * Base class.
@@ -147,15 +120,42 @@ if ( typeof wp === 'undefined' )
 	api.Class.extend = extend;
 
 	/* =====================================================================
-	 * Light two-way binding.
+	 * Events mixin.
+	 * ===================================================================== */
+
+	api.Events = {
+		trigger: function( id ) {
+			if ( this.topics && this.topics[ id ] )
+				this.topics[ id ].fireWith( this, slice.call( arguments, 1 ) );
+			return this;
+		},
+
+		bind: function( id, callback ) {
+			this.topics = this.topics || {};
+			this.topics[ id ] = this.topics[ id ] || $.Callbacks();
+			this.topics[ id ].add.apply( this.topics[ id ], slice.call( arguments, 1 ) );
+			return this;
+		},
+
+		unbind: function( id, callback ) {
+			if ( this.topics && this.topics[ id ] )
+				this.topics[ id ].remove.apply( this.topics[ id ], slice.call( arguments, 1 ) );
+			return this;
+		}
+	};
+
+	/* =====================================================================
+	 * Observable values that support two-way binding.
 	 * ===================================================================== */
 
 	api.Value = api.Class.extend({
 		initialize: function( initial, options ) {
-			this._value = initial;
+			this._value = initial; // @todo: potentially change this to a this.set() call.
 			this.callbacks = $.Callbacks();
 
 			$.extend( this, options || {} );
+
+			this.set = $.proxy( this.set, this );
 		},
 
 		/*
@@ -173,6 +173,7 @@ if ( typeof wp === 'undefined' )
 		set: function( to ) {
 			var from = this._value;
 
+			to = this._setter.apply( this, arguments );
 			to = this.validate( to );
 
 			// Bail if the sanitized value is null or unchanged.
@@ -183,6 +184,25 @@ if ( typeof wp === 'undefined' )
 
 			this.callbacks.fireWith( this, [ to, from ] );
 
+			return this;
+		},
+
+		_setter: function( to ) {
+			return to;
+		},
+
+		setter: function( callback ) {
+			var from = this.get();
+			this._setter = callback;
+			// Temporarily clear value so setter can decide if it's valid.
+			this._value = null;
+			this.set( from );
+			return this;
+		},
+
+		resetSetter: function() {
+			this._setter = this.constructor.prototype._setter;
+			this.set( this.get() );
 			return this;
 		},
 
@@ -200,81 +220,171 @@ if ( typeof wp === 'undefined' )
 			return this;
 		},
 
-		/*
-		 * Allows the creation of composite values.
-		 * Overrides the native link method (can be reverted with `unlink`).
-		 */
-		link: function() {
-			var keys = slice.call( arguments ),
-				callback = keys.pop(),
-				self = this,
-				set, key, active;
-
-			if ( this.links )
-				this.unlink();
-
-			this.links = [];
-
-			// Single argument means a direct binding.
-			if ( ! keys.length ) {
-				keys = [ callback ];
-				callback = function( value, to ) {
-					return to;
-				};
-			}
-
-			while ( key = keys.shift() ) {
-				if ( this._parent && $.type( key ) == 'string' )
-					this.links.push( this._parent[ key ] );
-				else
-					this.links.push( key );
-			}
-
-			// Replace this.set with the assignment function.
-			set = function() {
-				var args, result;
-
-				// If we call set from within the assignment function,
-				// pass the arguments to the original set.
-				if ( active )
-					return self.set.original.apply( self, arguments );
-
-				active = true;
-
-				args = self.links.concat( slice.call( arguments ) );
-				result = callback.apply( self, args );
-
-				active = false;
-
-				if ( typeof result !== 'undefined' )
-					self.set.original.call( self, result );
-			};
-
-			set.original = this.set;
-			this.set = set;
-
-			// Bind the new function to the master values.
-			$.each( this.links, function( key, value ) {
-				value.bind( self.set );
+		link: function() { // values*
+			var set = this.set;
+			$.each( arguments, function() {
+				this.bind( set );
 			});
-
-			this.set( this.get() );
-
 			return this;
 		},
 
-		unlink: function() {
+		unlink: function() { // values*
 			var set = this.set;
-
-			$.each( this.links, function( key, value ) {
-				value.unbind( set );
+			$.each( arguments, function() {
+				this.unbind( set );
 			});
+			return this;
+		},
 
-			delete this.links;
-			this.set = this.set.original;
+		sync: function() { // values*
+			var that = this;
+			$.each( arguments, function() {
+				that.link( this );
+				this.link( that );
+			});
+			return this;
+		},
+
+		unsync: function() { // values*
+			var that = this;
+			$.each( arguments, function() {
+				that.unlink( this );
+				this.unlink( that );
+			});
 			return this;
 		}
 	});
+
+	/* =====================================================================
+	 * A collection of observable values.
+	 * ===================================================================== */
+
+	api.Values = api.Class.extend({
+		defaultConstructor: api.Value,
+
+		initialize: function( options ) {
+			$.extend( this, options || {} );
+
+			this._value = {};
+			this._deferreds = {};
+		},
+
+		instance: function( id ) {
+			if ( arguments.length === 1 )
+				return this.value( id );
+
+			return this.when.apply( this, arguments );
+		},
+
+		value: function( id ) {
+			return this._value[ id ];
+		},
+
+		has: function( id ) {
+			return typeof this._value[ id ] !== 'undefined';
+		},
+
+		add: function( id, value ) {
+			if ( this.has( id ) )
+				return this.value( id );
+
+			this._value[ id ] = value;
+			value.parent = this;
+			if ( value.extended( api.Value ) )
+				value.bind( this._change );
+
+			this.trigger( 'add', value );
+
+			if ( this._deferreds[ id ] )
+				this._deferreds[ id ].resolve();
+
+			return this._value[ id ];
+		},
+
+		create: function( id ) {
+			return this.add( id, new this.defaultConstructor( api.Class.applicator, slice.call( arguments, 1 ) ) );
+		},
+
+		each: function( callback, context ) {
+			context = typeof context === 'undefined' ? this : context;
+
+			$.each( this._value, function( key, obj ) {
+				callback.call( context, obj, key );
+			});
+		},
+
+		remove: function( id ) {
+			var value;
+
+			if ( this.has( id ) ) {
+				value = this.value( id );
+				this.trigger( 'remove', value );
+				if ( value.extended( api.Value ) )
+					value.unbind( this._change );
+				delete value.parent;
+			}
+
+			delete this._value[ id ];
+			delete this._deferreds[ id ];
+		},
+
+		/**
+		 * Runs a callback once all requested values exist.
+		 *
+		 * when( ids*, [callback] );
+		 *
+		 * For example:
+		 *     when( id1, id2, id3, function( value1, value2, value3 ) {} );
+		 *
+		 * @returns $.Deferred.promise();
+		 */
+		when: function() {
+			var self = this,
+				ids  = slice.call( arguments ),
+				dfd  = $.Deferred();
+
+			// If the last argument is a callback, bind it to .done()
+			if ( $.isFunction( ids[ ids.length - 1 ] ) )
+				dfd.done( ids.pop() );
+
+			$.when.apply( $, $.map( ids, function( id ) {
+				if ( self.has( id ) )
+					return;
+
+				return self._deferreds[ id ] = self._deferreds[ id ] || $.Deferred();
+			})).done( function() {
+				var values = $.map( ids, function( id ) {
+						return self( id );
+					});
+
+				// If a value is missing, we've used at least one expired deferred.
+				// Call Values.when again to generate a new deferred.
+				if ( values.length !== ids.length ) {
+					// ids.push( callback );
+					self.when.apply( self, ids ).done( function() {
+						dfd.resolveWith( self, values );
+					});
+					return;
+				}
+
+				dfd.resolveWith( self, values );
+			});
+
+			return dfd.promise();
+		},
+
+		_change: function() {
+			this.parent.trigger( 'change', this );
+		}
+	});
+
+	$.extend( api.Values.prototype, api.Events );
+
+	/* =====================================================================
+	 * An observable value that syncs with an element.
+	 *
+	 * Handles inputs, selects, and textareas by default.
+	 * ===================================================================== */
 
 	api.ensure = function( element ) {
 		return typeof element == 'string' ? $( element ) : element;
@@ -299,6 +409,8 @@ if ( typeof wp === 'undefined' )
 						synchronizer = api.Element.synchronizer[ type ];
 					if ( 'text' === type || 'password' === type )
 						this.events += ' keyup';
+				} else if ( this.element.is('textarea') ) {
+					this.events += ' keyup';
 				}
 			}
 
@@ -325,6 +437,7 @@ if ( typeof wp === 'undefined' )
 		},
 
 		refresh: function() {},
+
 		update: function() {}
 	});
 
@@ -361,132 +474,112 @@ if ( typeof wp === 'undefined' )
 		}
 	};
 
-	api.ValueFactory = function( constructor ) {
-		constructor = constructor || api.Value;
-
-		return function( key ) {
-			var args = slice.call( arguments, 1 );
-			this[ key ] = new constructor( api.Class.applicator, args );
-			this[ key ]._parent = this;
-			return this[ key ];
-		};
-	};
-
-	api.Values = api.Value.extend({
-		defaultConstructor: api.Value,
-
-		initialize: function( options ) {
-			api.Value.prototype.initialize.call( this, {}, options || {} );
-		},
-
-		instance: function( id ) {
-			return this.value( id );
-		},
-
-		value: function( id ) {
-			return this._value[ id ];
-		},
-
-		has: function( id ) {
-			return typeof this._value[ id ] !== 'undefined';
-		},
-
-		add: function( id, value ) {
-			if ( this.has( id ) )
-				return;
-
-			this._value[ id ] = value;
-			this._value[ id ]._parent = this._value;
-			return this._value[ id ];
-		},
-
-		set: function( id ) {
-			if ( this.has( id ) )
-				return this.pass( 'set', arguments );
-
-			return this.add( id, new this.defaultConstructor( api.Class.applicator, slice.call( arguments, 1 ) ) );
-		},
-
-		remove: function( id ) {
-			delete this._value[ id ];
-		},
-
-		pass: function( fn, args ) {
-			var id, value;
-
-			args = slice.call( args );
-			id   = args.shift();
-
-			if ( ! this.has( id ) )
-				return;
-
-			value = this.value( id );
-			return value[ fn ].apply( value, args );
-		}
-	});
-
-	$.each( [ 'get', 'bind', 'unbind', 'link', 'unlink' ], function( i, method ) {
-		api.Values.prototype[ method ] = function() {
-			return this.pass( method, arguments );
-		};
-	});
-
 	/* =====================================================================
 	 * Messenger for postMessage.
 	 * ===================================================================== */
 
-	api.Messenger = api.Class.extend({
-		add: api.ValueFactory(),
+	$.support.postMessage = !! window.postMessage;
 
-		initialize: function( url, targetWindow, options ) {
+	api.Messenger = api.Class.extend({
+		add: function( key, initial, options ) {
+			return this[ key ] = new api.Value( initial, options );
+		},
+
+		/**
+		 * Initialize Messenger.
+		 *
+		 * @param  {object} params        Parameters to configure the messenger.
+		 *         {string} .url          The URL to communicate with.
+		 *         {window} .targetWindow The window instance to communicate with. Default window.parent.
+		 *         {string} .channel      If provided, will send the channel with each message and only accept messages a matching channel.
+		 * @param  {object} options       Extend any instance parameter or method with this object.
+		 */
+		initialize: function( params, options ) {
+			// Target the parent frame by default, but only if a parent frame exists.
+			var defaultTarget = window.parent == window ? null : window.parent;
+
 			$.extend( this, options || {} );
 
-			this.add( 'url', url );
-			this.add( 'targetWindow', targetWindow || null );
-			this.add( 'origin' ).link( 'url', function( url ) {
-				return url().replace( /([^:]+:\/\/[^\/]+).*/, '$1' );
+			this.add( 'channel', params.channel );
+			this.add( 'url', params.url || '' );
+			this.add( 'targetWindow', params.targetWindow || defaultTarget );
+			this.add( 'origin', this.url() ).link( this.url ).setter( function( to ) {
+				return to.replace( /([^:]+:\/\/[^\/]+).*/, '$1' );
 			});
 
-			this.topics = {};
+			// Since we want jQuery to treat the receive function as unique
+			// to this instance, we give the function a new guid.
+			//
+			// This will prevent every Messenger's receive function from being
+			// unbound when calling $.off( 'message', this.receive );
+			this.receive = $.proxy( this.receive, this );
+			this.receive.guid = $.guid++;
 
-			$.receiveMessage( $.proxy( this.receive, this ), this.origin() || null );
+			$( window ).on( 'message', this.receive );
 		},
+
+		destroy: function() {
+			$( window ).off( 'message', this.receive );
+		},
+
 		receive: function( event ) {
 			var message;
 
-			// @todo: remove, this is done in the postMessage plugin.
-			// if ( this.origin && event.origin !== this.origin )
-			// 	return;
+			event = event.originalEvent;
+
+			if ( ! this.targetWindow() )
+				return;
+
+			// Check to make sure the origin is valid.
+			if ( this.origin() && event.origin !== this.origin() )
+				return;
 
 			message = JSON.parse( event.data );
 
-			if ( message && message.id && message.data && this.topics[ message.id ] )
-				this.topics[ message.id ].fireWith( this, [ message.data ]);
+			// Check required message properties.
+			if ( ! message || ! message.id || typeof message.data === 'undefined' )
+				return;
+
+			// Check if channel names match.
+			if ( ( message.channel || this.channel() ) && this.channel() !== message.channel )
+				return;
+
+			this.trigger( message.id, message.data );
 		},
+
 		send: function( id, data ) {
 			var message;
 
-			if ( ! this.url() )
+			data = typeof data === 'undefined' ? null : data;
+
+			if ( ! this.url() || ! this.targetWindow() )
 				return;
 
-			message = JSON.stringify({ id: id, data: data });
-			$.postMessage( message, this.url(), this.targetWindow() );
-		},
-		bind: function( id, callback ) {
-			var topic = this.topics[ id ] || ( this.topics[ id ] = $.Callbacks() );
-			topic.add( callback );
-		},
-		unbind: function( id, callback ) {
-			if ( this.topics[ id ] )
-				this.topics[ id ].remove( callback );
+			message = { id: id, data: data };
+			if ( this.channel() )
+				message.channel = this.channel();
+
+			this.targetWindow().postMessage( JSON.stringify( message ), this.origin() );
 		}
 	});
+
+	// Add the Events mixin to api.Messenger.
+	$.extend( api.Messenger.prototype, api.Events );
 
 	/* =====================================================================
 	 * Core customize object.
 	 * ===================================================================== */
 
 	api = $.extend( new api.Values(), api );
+	api.get = function() {
+		var result = {};
+
+		this.each( function( obj, key ) {
+			result[ key ] = obj.get();
+		});
+
+		return result;
+	};
 
 	// Expose the API to the world.
 	exports.customize = api;

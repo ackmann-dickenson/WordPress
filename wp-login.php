@@ -39,7 +39,7 @@ if ( force_ssl_admin() && !is_ssl() ) {
  * @param WP_Error $wp_error Optional. WordPress Error Object
  */
 function login_header($title = 'Log In', $message = '', $wp_error = '') {
-	global $error, $is_iphone, $interim_login, $current_site;
+	global $error, $interim_login, $current_site, $customize_login;
 
 	// Don't index any of these forms
 	add_action( 'login_head', 'wp_no_robots' );
@@ -54,26 +54,22 @@ function login_header($title = 'Log In', $message = '', $wp_error = '') {
 	if ( $shake_error_codes && $wp_error->get_error_code() && in_array( $wp_error->get_error_code(), $shake_error_codes ) )
 		add_action( 'login_head', 'wp_shake_js', 12 );
 
-	?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" <?php language_attributes(); ?>>
-<head>
+	?><!DOCTYPE html>
+	<html xmlns="http://www.w3.org/1999/xhtml" <?php language_attributes(); ?>>
+	<head>
 	<meta http-equiv="Content-Type" content="<?php bloginfo('html_type'); ?>; charset=<?php bloginfo('charset'); ?>" />
 	<title><?php bloginfo('name'); ?> &rsaquo; <?php echo $title; ?></title>
-<?php
+	<?php
+
 	wp_admin_css( 'wp-admin', true );
 	wp_admin_css( 'colors-fresh', true );
 
-	if ( $is_iphone ) { ?>
-	<meta name="viewport" content="width=320; initial-scale=0.9; maximum-scale=1.0; user-scalable=0;" />
-	<style type="text/css" media="screen">
-	.login form, .login .message, #login_error { margin-left: 0px; }
-	.login #nav, .login #backtoblog { margin-left: 8px; }
-	.login h1 a { width: auto; }
-	#login { padding: 20px 0; }
-	</style>
-<?php
+	if ( wp_is_mobile() ) { ?>
+		<meta name="viewport" content="width=320; initial-scale=0.9; maximum-scale=1.0; user-scalable=0;" /><?php
 	}
+
+	if ( $customize_login )
+		wp_enqueue_script( 'customize-base' );
 
 	do_action( 'login_enqueue_scripts' );
 	do_action( 'login_head' );
@@ -88,16 +84,23 @@ function login_header($title = 'Log In', $message = '', $wp_error = '') {
 
 	$login_header_url   = apply_filters( 'login_headerurl',   $login_header_url   );
 	$login_header_title = apply_filters( 'login_headertitle', $login_header_title );
-?>
-</head>
-<body class="login">
+
+	// Don't allow interim logins to navigate away from the page.
+	if ( $interim_login )
+		$login_header_url = '#';
+
+	?>
+	</head>
+	<body class="login<?php if ( wp_is_mobile() ) echo ' mobile'; ?>">
 	<div id="login">
 		<h1><a href="<?php echo esc_url( $login_header_url ); ?>" title="<?php echo esc_attr( $login_header_title ); ?>"><?php bloginfo( 'name' ); ?></a></h1>
-<?php
+	<?php
+
 	unset( $login_header_url, $login_header_title );
 
 	$message = apply_filters('login_message', $message);
-	if ( !empty( $message ) ) echo $message . "\n";
+	if ( !empty( $message ) )
+		echo $message . "\n";
 
 	// In case a plugin uses $error rather than the $wp_errors object
 	if ( !empty( $error ) ) {
@@ -130,27 +133,31 @@ function login_header($title = 'Log In', $message = '', $wp_error = '') {
  * @param string $input_id Which input to auto-focus
  */
 function login_footer($input_id = '') {
-	?>
+	global $interim_login;
+
+	// Don't allow interim logins to navigate away from the page.
+	if ( ! $interim_login ): ?>
 	<p id="backtoblog"><a href="<?php echo esc_url( home_url( '/' ) ); ?>" title="<?php esc_attr_e( 'Are you lost?' ); ?>"><?php printf( __( '&larr; Back to %s' ), get_bloginfo( 'title', 'display' ) ); ?></a></p>
+	<?php endif; ?>
+
 	</div>
 
-<?php if ( !empty($input_id) ) : ?>
-<script type="text/javascript">
-try{document.getElementById('<?php echo $input_id; ?>').focus();}catch(e){}
-if(typeof wpOnload=='function')wpOnload();
-</script>
-<?php endif; ?>
+	<?php if ( !empty($input_id) ) : ?>
+	<script type="text/javascript">
+	try{document.getElementById('<?php echo $input_id; ?>').focus();}catch(e){}
+	if(typeof wpOnload=='function')wpOnload();
+	</script>
+	<?php endif; ?>
 
-<?php do_action('login_footer'); ?>
-<div class="clear"></div>
-</body>
-</html>
-<?php
+	<?php do_action('login_footer'); ?>
+	<div class="clear"></div>
+	</body>
+	</html>
+	<?php
 }
 
 function wp_shake_js() {
-	global $is_iphone;
-	if ( $is_iphone )
+	if ( wp_is_mobile() )
 		return;
 ?>
 <script type="text/javascript">
@@ -560,6 +567,7 @@ case 'login' :
 default:
 	$secure_cookie = '';
 	$interim_login = isset($_REQUEST['interim-login']);
+	$customize_login = isset( $_REQUEST['customize-login'] );
 
 	// If the user wants ssl but the session is not ssl, force a secure cookie.
 	if ( !empty($_POST['log']) && !force_ssl_admin() ) {
@@ -596,11 +604,22 @@ default:
 	if ( !is_wp_error($user) && !$reauth ) {
 		if ( $interim_login ) {
 			$message = '<p class="message">' . __('You have logged in successfully.') . '</p>';
-			login_header( '', $message ); ?>
-			<script type="text/javascript">setTimeout( function(){window.close()}, 8000);</script>
-			<p class="alignright">
-			<input type="button" class="button-primary" value="<?php esc_attr_e('Close'); ?>" onclick="window.close()" /></p>
-			</div></body></html>
+			login_header( '', $message );
+
+			if ( ! $customize_login ) : ?>
+				<script type="text/javascript">setTimeout( function(){window.close()}, 8000);</script>
+				<p class="alignright">
+				<input type="button" class="button-primary" value="<?php esc_attr_e('Close'); ?>" onclick="window.close()" /></p>
+<?php		endif;
+
+			?></div><?php
+
+			do_action('login_footer');
+
+			if ( $customize_login ) : ?>
+				<script type="text/javascript">setTimeout( function(){ new wp.customize.Messenger({ url: '<?php echo wp_customize_url(); ?>', channel: 'login' }).send('login') }, 1000 );</script>
+<?php		endif; ?>
+			</body></html>
 <?php		exit;
 		}
 
@@ -639,6 +658,8 @@ default:
 		$errors->add('registered', __('Registration complete. Please check your e-mail.'), 'message');
 	elseif	( $interim_login )
 		$errors->add('expired', __('Your session has expired. Please log-in again.'), 'message');
+	elseif ( strpos( $redirect_to, 'about.php?updated' ) )
+		$errors->add('updated', __( '<strong>You have successfully updated WordPress!</strong> Please log back in to experience the awesomeness.' ), 'message' );
 
 	// Clear any stale cookies.
 	if ( $reauth )
@@ -669,6 +690,9 @@ default:
 <?php	} else { ?>
 		<input type="hidden" name="redirect_to" value="<?php echo esc_attr($redirect_to); ?>" />
 <?php 	} ?>
+<?php   if ( $customize_login ) : ?>
+		<input type="hidden" name="customize-login" value="1" />
+<?php   endif; ?>
 		<input type="hidden" name="testcookie" value="1" />
 	</p>
 </form>

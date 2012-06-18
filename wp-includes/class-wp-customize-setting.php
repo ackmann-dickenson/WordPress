@@ -8,23 +8,20 @@
  */
 
 class WP_Customize_Setting {
+	public $manager;
 	public $id;
-	public $priority          = 10;
-	public $section           = '';
-	public $label             = '';
-	public $control           = 'text';
-	public $type              = 'theme_mod';
-	public $choices           = array();
-	public $capability        = 'edit_theme_options';
-	public $theme_supports    = '';
-	public $default           = '';
-	public $sanitize_callback = '';
+
+	public $type            = 'theme_mod';
+	public $capability      = 'edit_theme_options';
+	public $theme_supports  = '';
+	public $default         = '';
+	public $transport       = 'refresh';
+
+	public $sanitize_callback    = '';
+	public $sanitize_js_callback = '';
 
 	protected $id_data = array();
 	private $_post_value; // Cached, sanitized $_POST value.
-
-	// Prefix for $_POST values to prevent naming conflicts.
-	const name_prefix = 'customize_';
 
 	/**
 	 * Constructor.
@@ -35,13 +32,14 @@ class WP_Customize_Setting {
 	 *                   theme mod or option name.
 	 * @param array $args Setting arguments.
 	 */
-	function __construct( $id, $args = array() ) {
+	function __construct( $manager, $id, $args = array() ) {
 		$keys = array_keys( get_class_vars( __CLASS__ ) );
 		foreach ( $keys as $key ) {
 			if ( isset( $args[ $key ] ) )
 				$this->$key = $args[ $key ];
 		}
 
+		$this->manager = $manager;
 		$this->id = $id;
 
 		// Parse the ID for array keys.
@@ -53,24 +51,13 @@ class WP_Customize_Setting {
 		if ( ! empty( $this->id_data[ 'keys' ] ) )
 			$this->id .= '[' . implode( '][', $this->id_data[ 'keys' ] ) . ']';
 
-		if ( $this->sanitize_callback != '' )
-			add_filter( "customize_sanitize_{$this->id}", $this->sanitize_callback );
+		if ( $this->sanitize_callback )
+			add_filter( "customize_sanitize_{$this->id}", $this->sanitize_callback, 10, 2 );
+
+		if ( $this->sanitize_js_callback )
+			add_filter( "customize_sanitize_js_{$this->id}", $this->sanitize_js_callback, 10, 2 );
 
 		return $this;
-	}
-
-	/**
-	 * Enqueue setting related scripts/styles.
-	 *
-	 * @since 3.4.0
-	 */
-	public function enqueue() {
-		switch( $this->control ) {
-			case 'color':
-				wp_enqueue_script( 'farbtastic' );
-				wp_enqueue_style( 'farbtastic' );
-				break;
-		}
 	}
 
 	/**
@@ -86,8 +73,10 @@ class WP_Customize_Setting {
 			case 'option' :
 				if ( empty( $this->id_data[ 'keys' ] ) )
 					add_filter( 'pre_option_' . $this->id_data[ 'base' ], array( $this, '_preview_filter' ) );
-				else
+				else {
 					add_filter( 'option_' . $this->id_data[ 'base' ], array( $this, '_preview_filter' ) );
+					add_filter( 'default_option_' . $this->id_data[ 'base' ], array( $this, '_preview_filter' ) );
+				}
 				break;
 			default :
 				do_action( 'customize_preview_' . $this->id );
@@ -136,16 +125,8 @@ class WP_Customize_Setting {
 		if ( isset( $this->_post_value ) )
 			return $this->_post_value;
 
-		$base = self::name_prefix . $this->id_data[ 'base' ];
+		$result = $this->manager->post_value( $this );
 
-		if ( ! isset( $_POST[ $base ] ) )
-			return $default;
-
-		$result = $this->multidimensional_get( $_POST[ $base ], $this->id_data[ 'keys' ] );
-		if ( ! isset( $result ) )
-			return $default;
-
-		$result = $this->sanitize( $result );
 		if ( isset( $result ) )
 			return $this->_post_value = $result;
 		else
@@ -162,7 +143,7 @@ class WP_Customize_Setting {
 	 */
 	public function sanitize( $value ) {
 		$value = stripslashes_deep( $value );
-		return apply_filters( "customize_sanitize_{$this->id}", $value );
+		return apply_filters( "customize_sanitize_{$this->id}", $value, $this );
 	}
 
 	/**
@@ -255,6 +236,22 @@ class WP_Customize_Setting {
 	}
 
 	/**
+	 * Escape the parameter's value for use in JavaScript.
+	 *
+	 * @since 3.4.0
+	 *
+	 * @return mixed The requested escaped value.
+	 */
+	public function js_value() {
+		$value = apply_filters( "customize_sanitize_js_{$this->id}", $this->value(), $this );
+
+		if ( is_string( $value ) )
+			return html_entity_decode( $value, ENT_QUOTES, 'UTF-8');
+
+		return $value;
+	}
+
+	/**
 	 * Check if the theme supports the setting and check user capabilities.
 	 *
 	 * @since 3.4.0
@@ -262,138 +259,13 @@ class WP_Customize_Setting {
 	 * @return bool False if theme doesn't support the setting or user can't change setting, otherwise true.
 	 */
 	public final function check_capabilities() {
-		global $customize;
-
-		if ( ! $this->capability || ! current_user_can( $this->capability ) )
+		if ( $this->capability && ! call_user_func_array( 'current_user_can', (array) $this->capability ) )
 			return false;
 
-		if ( $this->theme_supports && ! current_theme_supports( $this->theme_supports ) )
-			return false;
-
-		$section = $customize->get_section( $this->section );
-		if ( isset( $section ) && ! $section->check_capabilities() )
+		if ( $this->theme_supports && ! call_user_func_array( 'current_theme_supports', (array) $this->theme_supports ) )
 			return false;
 
 		return true;
-	}
-
-	/**
-	 * Render the control.
-	 *
-	 * @since 3.4.0
-	 */
-	public final function _render() {
-		if ( ! $this->check_capabilities() )
-			return;
-
-		do_action( 'customize_render_' . $this->id );
-
-		$this->render();
-	}
-
-	/**
-	 * Render the control.
-	 *
-	 * @since 3.4.0
-	 */
-	protected function render() {
-		$this->_render_type();
-	}
-
-	/**
-	 * Retrieve the name attribute for an input.
-	 *
-	 * @since 3.4.0
-	 *
-	 * @return string The name.
-	 */
-	public final function get_name() {
-		return self::name_prefix . esc_attr( $this->id );
-	}
-
-	/**
-	 * Echo the HTML name attribute for an input.
-	 *
-	 * @since 3.4.0
-	 *
-	 * @return string The HTML name attribute.
-	 */
-	public final function name() {
-		echo 'name="' . $this->get_name() . '"';
-	}
-
-	/**
-	 * Render the control type.
-	 *
-	 * @todo Improve value and checked attributes.
-	 *
-	 * @since 3.4.0
-	 */
-	public final function _render_type() {
-		switch( $this->control ) {
-			case 'text':
-				?>
-				<label><?php echo esc_html( $this->label ); ?><br/>
-					<input type="text" value="<?php echo esc_attr( $this->value() ); ?>" <?php $this->name(); ?> />
-				</label>
-				<?php
-				break;
-			case 'color':
-				?>
-				<label>
-					<span><?php echo esc_html( $this->label ); ?></span>
-					<div class="color-picker">
-						<input class="color-picker-value" type="hidden" value="<?php echo esc_attr( $this->value() ); ?>" <?php $this->name(); ?> />
-						<a href="#"></a>
-						<div class="color-picker-controls">
-							<div class="farbtastic-placeholder"></div>
-							<span>#</span>
-							<input type="text" />
-						</div>
-					</div>
-				</label>
-				<?php
-				break;
-			case 'checkbox':
-				?>
-				<label>
-					<input type="checkbox" value="<?php echo esc_attr( $this->value() ); ?>" <?php $this->name(); checked( $this->value() ); ?> />
-					<?php echo esc_html( $this->label ); ?>
-				</label>
-				<?php
-				break;
-			case 'radio':
-				if ( empty( $this->choices ) )
-					return;
-
-				echo esc_html( $this->label ) . '<br/>';
-				foreach ( $this->choices as $value => $label ) :
-					?>
-					<label>
-						<input type="radio" value="<?php echo esc_attr( $value ); ?>" <?php $this->name(); checked( $this->value(), $value ); ?> />
-						<?php echo esc_html( $label ); ?><br/>
-					</label>
-					<?php
-				endforeach;
-				break;
-			case 'select':
-				if ( empty( $this->choices ) )
-					return;
-
-				?>
-				<label><?php echo esc_html( $this->label ); ?><br/>
-				<select <?php $this->name(); ?>>
-					<?php
-					foreach ( $this->choices as $value => $label )
-						echo '<option value="' . esc_attr( $value ) . '"' . selected( $this->value(), $value, false ) . '>' . $label . '</option>';
-					?>
-				</select>
-				<?php
-				break;
-			default:
-				do_action( 'customize_render_control-' . $this->control, $this );
-
-		}
 	}
 
 	/**
@@ -406,7 +278,7 @@ class WP_Customize_Setting {
 	 * @param bool $create Default is false.
 	 * @return null|array
 	 */
-	final protected function multidimensional( $root, $keys, $create = false ) {
+	final protected function multidimensional( &$root, $keys, $create = false ) {
 		if ( $create && empty( $root ) )
 			$root = array();
 
@@ -455,7 +327,7 @@ class WP_Customize_Setting {
 		elseif ( empty( $keys ) ) // If there are no keys, we're replacing the root.
 			return $value;
 
-		$result = $this->multidimensional( &$root, $keys, true );
+		$result = $this->multidimensional( $root, $keys, true );
 
 		if ( isset( $result ) )
 			$result['node'][ $result['key'] ] = $value;
@@ -493,5 +365,45 @@ class WP_Customize_Setting {
 	final protected function multidimensional_isset( $root, $keys ) {
 		$result = $this->multidimensional_get( $root, $keys );
 		return isset( $result );
+	}
+}
+
+/**
+ * A setting that is used to filter a value, but will not save the results.
+ *
+ * Results should be properly handled using another setting or callback.
+ */
+class WP_Customize_Filter_Setting extends WP_Customize_Setting {
+	public function update() {}
+}
+
+/**
+ * A setting that is used to filter a value, but will not save the results.
+ *
+ * Results should be properly handled using another setting or callback.
+ */
+final class WP_Customize_Header_Image_Setting extends WP_Customize_Setting {
+	public $id = 'header_image_data';
+
+	public function update( $value ) {
+		global $custom_image_header;
+
+		// If the value doesn't exist (removed or random),
+		// use the header_image value.
+		if ( ! $value )
+			$value = $this->manager->get_setting('header_image')->post_value();
+
+		if ( is_array( $value ) && isset( $value['choice'] ) )
+			$custom_image_header->set_header_image( $value['choice'] );
+		else
+			$custom_image_header->set_header_image( $value );
+	}
+}
+
+final class WP_Customize_Background_Image_Setting extends WP_Customize_Setting {
+	public $id = 'background_image_thumb';
+
+	public function update( $value ) {
+		remove_theme_mod( 'background_image_thumb' );
 	}
 }

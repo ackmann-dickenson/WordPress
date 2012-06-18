@@ -16,7 +16,7 @@ class WP_MS_Themes_List_Table extends WP_List_Table {
 		global $status, $page;
 
 		$status = isset( $_REQUEST['theme_status'] ) ? $_REQUEST['theme_status'] : 'all';
-		if ( !in_array( $status, array( 'all', 'enabled', 'disabled', 'upgrade', 'search' ) ) )
+		if ( !in_array( $status, array( 'all', 'enabled', 'disabled', 'upgrade', 'search', 'broken' ) ) )
 			$status = 'all';
 
 		$page = $this->get_pagenum();
@@ -59,7 +59,8 @@ class WP_MS_Themes_List_Table extends WP_List_Table {
 			'search' => array(),
 			'enabled' => array(),
 			'disabled' => array(),
-			'upgrade' => array()
+			'upgrade' => array(),
+			'broken' => $this->is_site_themes ? array() : wp_get_themes( array( 'errors' => true ) ),
 		);
 
 		if ( $this->is_site_themes ) {
@@ -70,7 +71,7 @@ class WP_MS_Themes_List_Table extends WP_List_Table {
 			$allowed_where = 'network';
 		}
 
-		$current = current_user_can( 'update_themes' ) && ! $this->is_site_themes && get_site_transient( 'update_themes' );
+		$maybe_update = current_user_can( 'update_themes' ) && ! $this->is_site_themes && $current = get_site_transient( 'update_themes' );
 
 		foreach ( (array) $themes['all'] as $key => $theme ) {
 			if ( $this->is_site_themes && $theme->is_allowed( 'network' ) ) {
@@ -78,16 +79,18 @@ class WP_MS_Themes_List_Table extends WP_List_Table {
 				continue;
 			}
 
+			if ( $maybe_update && isset( $current->response[ $key ] ) ) {
+				$themes['all'][ $key ]->update = true;
+				$themes['upgrade'][ $key ] = $themes['all'][ $key ];
+			}
+
 			$filter = $theme->is_allowed( $allowed_where, $this->site_id ) ? 'enabled' : 'disabled';
 			$themes[ $filter ][ $key ] = $themes['all'][ $key ];
-
-			if ( $current && isset( $current->response[ $key ] ) )
-				$themes['upgrade'][ $key ] = $themes['all'][ $key ];
 		}
 
 		if ( $s ) {
 			$status = 'search';
-			$themes['search'] = array_filter( $themes['all'], array( &$this, '_search_callback' ) );
+			$themes['search'] = array_filter( array_merge( $themes['all'], $themes['broken'] ), array( &$this, '_search_callback' ) );
 		}
 
 		$totals = array();
@@ -206,6 +209,9 @@ class WP_MS_Themes_List_Table extends WP_List_Table {
 				case 'upgrade':
 					$text = _n( 'Update Available <span class="count">(%s)</span>', 'Update Available <span class="count">(%s)</span>', $count );
 					break;
+				case 'broken' :
+					$text = _n( 'Broken <span class="count">(%s)</span>', 'Broken <span class="count">(%s)</span>', $count );
+					break;
 			}
 
 			if ( $this->is_site_themes )
@@ -257,7 +263,7 @@ class WP_MS_Themes_List_Table extends WP_List_Table {
 	}
 
 	function single_row( $key, $theme ) {
-		global $status, $page, $s;
+		global $status, $page, $s, $totals;
 
 		$context = $status;
 
@@ -279,10 +285,12 @@ class WP_MS_Themes_List_Table extends WP_List_Table {
 
 		$theme_key = $theme->get_stylesheet();
 
-		if ( ! $allowed )
-			$actions['enable'] = '<a href="' . esc_url( wp_nonce_url($url . 'action=enable&amp;theme=' . $theme_key . '&amp;paged=' . $page . '&amp;s=' . $s, 'enable-theme_' . $theme_key) ) . '" title="' . esc_attr__('Enable this theme') . '" class="edit">' . ( $this->is_site_themes ? __( 'Enable' ) : __( 'Network Enable' ) ) . '</a>';
-		else
+		if ( ! $allowed ) {
+			if ( ! $theme->errors() )
+				$actions['enable'] = '<a href="' . esc_url( wp_nonce_url($url . 'action=enable&amp;theme=' . $theme_key . '&amp;paged=' . $page . '&amp;s=' . $s, 'enable-theme_' . $theme_key) ) . '" title="' . esc_attr__('Enable this theme') . '" class="edit">' . ( $this->is_site_themes ? __( 'Enable' ) : __( 'Network Enable' ) ) . '</a>';
+		} else {
 			$actions['disable'] = '<a href="' . esc_url( wp_nonce_url($url . 'action=disable&amp;theme=' . $theme_key . '&amp;paged=' . $page . '&amp;s=' . $s, 'disable-theme_' . $theme_key) ) . '" title="' . esc_attr__('Disable this theme') . '">' . ( $this->is_site_themes ? __( 'Disable' ) : __( 'Network Disable' ) ) . '</a>';
+		}
 
 		if ( current_user_can('edit_themes') )
 			$actions['edit'] = '<a href="' . esc_url('theme-editor.php?theme=' .  $theme_key ) . '" title="' . esc_attr__('Open this theme in the Theme Editor') . '" class="edit">' . __('Edit') . '</a>';
@@ -297,9 +305,10 @@ class WP_MS_Themes_List_Table extends WP_List_Table {
 		$checkbox_id = "checkbox_" . md5( $theme->get('Name') );
 		$checkbox = "<input type='checkbox' name='checked[]' value='" . esc_attr( $theme_key ) . "' id='" . $checkbox_id . "' /><label class='screen-reader-text' for='" . $checkbox_id . "' >" . __('Select') . " " . $theme->display('Name') . "</label>";
 
-		$description = '<p>' . $theme->display( 'Description' ) . '</p>';
-
 		$id = sanitize_html_class( $theme->get_stylesheet() );
+
+		if ( ! empty( $totals['upgrade'] ) && ! empty( $theme->update ) )
+			$class .= ' update';
 
 		echo "<tr id='$id' class='$class'>";
 
@@ -320,8 +329,12 @@ class WP_MS_Themes_List_Table extends WP_List_Table {
 					echo "</td>";
 					break;
 				case 'description':
-					echo "<td class='column-description desc'$style>
-						<div class='theme-description'>" . $theme->display( 'Description' ) . "</div>
+					echo "<td class='column-description desc'$style>";
+					if ( $theme->errors() ) {
+						$pre = $status == 'broken' ? '' : __( 'Broken Theme:' ) . ' ';
+						echo '<p><strong class="attention">' . $pre . $theme->errors()->get_error_message() . '</strong></p>';
+					}
+					echo "<div class='theme-description'><p>" . $theme->display( 'Description' ) . "</p></div>
 						<div class='$class second theme-version-author-uri'>";
 
 					$theme_meta = array();
@@ -329,8 +342,7 @@ class WP_MS_Themes_List_Table extends WP_List_Table {
 					if ( $theme->get('Version') )
 						$theme_meta[] = sprintf( __( 'Version %s' ), $theme->display('Version') );
 
-					if ( $theme->get('Author') )
-						$theme_meta[] = sprintf( __( 'By %s' ), $theme->display('Author') );
+					$theme_meta[] = sprintf( __( 'By %s' ), $theme->display('Author') );
 
 					if ( $theme->get('ThemeURI') )
 						$theme_meta[] = '<a href="' . $theme->display('ThemeURI') . '" title="' . esc_attr__( 'Visit theme homepage' ) . '">' . __( 'Visit Theme Site' ) . '</a>';

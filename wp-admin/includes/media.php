@@ -62,15 +62,9 @@ add_filter('media_upload_tabs', 'update_gallery_tab');
  * @since 2.5.0
  */
 function the_media_upload_tabs() {
-	global $redir_tab, $is_iphone;
+	global $redir_tab;
 	$tabs = media_upload_tabs();
-
-	if ( $is_iphone ) {
-		unset($tabs['type']);
-		$default = 'type_url';
-	} else {
-		$default = 'type';
-	}
+	$default = 'type';
 
 	if ( !empty($tabs) ) {
 		echo "<ul id='sidemenu'>\n";
@@ -144,40 +138,35 @@ function image_add_caption( $html, $id, $caption, $title, $align, $url, $size, $
 
 	$id = ( 0 < (int) $id ) ? 'attachment_' . $id : '';
 
-	if ( ! preg_match( '/width="([0-9]+)/', $html, $matches ) )
+	if ( ! preg_match( '/width=["\']([0-9]+)/', $html, $matches ) )
 		return $html;
 
 	$width = $matches[1];
 
-	// look only for html tags with attributes
-	$caption = preg_replace_callback( '/<[a-zA-Z0-9]+ [^<>]+>/', '_cleanup_image_add_caption', $caption );
-	$caption = str_replace(	'"', '&quot;', $caption );
+	$caption = str_replace( array("\r\n", "\r"), "\n", $caption);
+	$caption = preg_replace_callback( '/<[a-zA-Z0-9]+(?: [^<>]+>)*/', '_cleanup_image_add_caption', $caption );
+	// convert any remaining line breaks to <br>
+	$caption = preg_replace( '/[ \n\t]*\n[ \t]*/', '<br />', $caption );
 
 	$html = preg_replace( '/(class=["\'][^\'"]*)align(none|left|right|center)\s?/', '$1', $html );
 	if ( empty($align) )
 		$align = 'none';
 
-	$shcode = '[caption id="' . $id . '" align="align' . $align
-	. '" width="' . $width . '" caption="' . $caption . '"]' . $html . '[/caption]';
+	$shcode = '[caption id="' . $id . '" align="align' . $align	. '" width="' . $width . '"]' . $html . ' ' . $caption . '[/caption]';
 
 	return apply_filters( 'image_add_caption_shortcode', $shcode, $html );
 }
 add_filter( 'image_send_to_editor', 'image_add_caption', 20, 8 );
 
-// Private, preg_replace callback used in image_add_caption()
-function _cleanup_image_add_caption($str) {
-	if ( isset($str[0]) ) {
-		// look for single quotes inside html attributes (for example in title)
-		$s = preg_replace_callback( '/="[^"]+"/', '_cleanup_image_add_caption2', $str[0] );
-		return str_replace(	'"', "'", $s );
-	}
-
-	return '';
-}
-
-// Private, preg_replace callback used in image_add_caption()
-function _cleanup_image_add_caption2($str) {
-	return str_replace(	"'", '&#39;', $str );
+/**
+ * Private preg_replace callback used in image_add_caption()
+ *
+ * @access private
+ * @since 3.4.0
+ */
+function _cleanup_image_add_caption( $matches ) {
+	// remove any line breaks from inside the tags
+	return preg_replace( '/[\r\n\t]+/', ' ', $matches[0] );
 }
 
 /**
@@ -401,17 +390,19 @@ function _media_button($title, $icon, $type, $id) {
 	return "<a href='" . esc_url( get_upload_iframe_src($type) ) . "' id='{$id}-add_{$type}' class='thickbox add_$type' title='" . esc_attr( $title ) . "'><img src='" . esc_url( admin_url( $icon ) ) . "' alt='$title' onclick='return false;' /></a>";
 }
 
-function get_upload_iframe_src( $type = null, $post_id = null ) {
+function get_upload_iframe_src( $type = null, $post_id = null, $tab = null ) {
 	global $post_ID;
 
 	if ( empty( $post_id ) )
 		$post_id = $post_ID;
 
-	$uploading_iframe_ID = (int) $post_id;
-	$upload_iframe_src = add_query_arg( 'post_id', $uploading_iframe_ID, admin_url('media-upload.php') );
+	$upload_iframe_src = add_query_arg( 'post_id', (int) $post_id, admin_url('media-upload.php') );
 
 	if ( $type && 'media' != $type )
 		$upload_iframe_src = add_query_arg('type', $type, $upload_iframe_src);
+
+	if ( ! empty( $tab ) )
+		$upload_iframe_src = add_query_arg('tab', $tab, $upload_iframe_src);
 
 	$upload_iframe_src = apply_filters($type . '_upload_iframe_src', $upload_iframe_src);
 
@@ -495,7 +486,7 @@ function media_upload_form_handler() {
 	if ( isset($send_id) ) {
 		$attachment = stripslashes_deep( $_POST['attachments'][$send_id] );
 
-		$html = $attachment['post_title'];
+		$html = isset( $attachment['post_title'] ) ? $attachment['post_title'] : '';
 		if ( !empty($attachment['url']) ) {
 			$rel = '';
 			if ( strpos($attachment['url'], 'attachment_id') || get_attachment_link($send_id) == $attachment['url'] )
@@ -518,8 +509,6 @@ function media_upload_form_handler() {
  * @return unknown
  */
 function wp_media_upload_handler() {
-	global $is_iphone;
-
 	$errors = array();
 	$id = 0;
 
@@ -590,10 +579,7 @@ function wp_media_upload_handler() {
 		return wp_iframe( 'media_upload_type_url_form', $type, $errors, $id );
 	}
 
-	if ( $is_iphone )
-		return wp_iframe( 'media_upload_type_url_form', 'image', $errors, $id );
-	else
-		return wp_iframe( 'media_upload_type_form', 'image', $errors, $id );
+	return wp_iframe( 'media_upload_type_form', 'image', $errors, $id );
 }
 
 /**
@@ -804,7 +790,7 @@ function wp_caption_input_textarea($edit_post) {
 	// post data is already escaped
 	$name = "attachments[{$edit_post->ID}][post_excerpt]";
 
-	return '<textarea class="code" name="' . $name . '" id="' . $name . '">' . $edit_post->post_excerpt . '</textarea>';
+	return '<textarea name="' . $name . '" id="' . $name . '">' . $edit_post->post_excerpt . '</textarea>';
 }
 
 /**
@@ -949,7 +935,7 @@ function get_attachment_fields_to_edit($post, $errors = null) {
 		),
 		'image_alt'   => array(),
 		'post_excerpt' => array(
-			'label'      => __('Default Caption'),
+			'label'      => __('Caption'),
 			'input'      => 'html',
 			'html'       => wp_caption_input_textarea($edit_post)
 		),
@@ -1173,7 +1159,7 @@ function get_media_item( $attachment_id, $args = null ) {
 			$delete = "<a href='" . wp_nonce_url( "post.php?action=delete&amp;post=$attachment_id", 'delete-attachment_' . $attachment_id ) . "' id='del[$attachment_id]' class='delete'>" . __( 'Delete Permanently' ) . '</a>';
 		} elseif ( !MEDIA_TRASH ) {
 			$delete = "<a href='#' class='del-link' onclick=\"document.getElementById('del_attachment_$attachment_id').style.display='block';return false;\">" . __( 'Delete' ) . "</a>
-			 <div id='del_attachment_$attachment_id' class='del-attachment' style='display:none;'>" . sprintf( __( 'You are about to delete <strong>%s</strong>.' ), $filename ) . "
+			 <div id='del_attachment_$attachment_id' class='del-attachment' style='display:none;'><p>" . sprintf( __( 'You are about to delete <strong>%s</strong>.' ), $filename ) . "</p>
 			 <a href='" . wp_nonce_url( "post.php?action=delete&amp;post=$attachment_id", 'delete-attachment_' . $attachment_id ) . "' id='del[$attachment_id]' class='button'>" . __( 'Continue' ) . "</a>
 			 <a href='#' class='button' onclick=\"this.parentNode.style.display='none';return false;\">" . __( 'Cancel' ) . "</a>
 			 </div>";
@@ -1296,10 +1282,12 @@ function media_upload_header() {
  * @param unknown_type $errors
  */
 function media_upload_form( $errors = null ) {
-	global $type, $tab, $pagenow, $is_IE, $is_opera, $is_iphone;
+	global $type, $tab, $pagenow, $is_IE, $is_opera;
 
-	if ( $is_iphone )
+	if ( ! _device_can_upload() ) {
+		echo '<p>' . __('The web browser on your device cannot be used to upload files. You may be able to use the <a href="http://wordpress.org/extend/mobile/">native app for your device</a> instead.') . '</p>';
 		return;
+	}
 
 	$upload_action_url = admin_url('async-upload.php');
 	$post_id = isset($_REQUEST['post_id']) ? intval($_REQUEST['post_id']) : 0;
@@ -1430,10 +1418,6 @@ if ( ($is_IE || $is_opera) && $max_upload_size > 100 * 1024 * 1024 ) { ?>
  * @param unknown_type $id
  */
 function media_upload_type_form($type = 'file', $errors = null, $id = null) {
-	global $is_iphone;
-
-	if ( $is_iphone )
-		return;
 
 	media_upload_header();
 
@@ -1542,14 +1526,12 @@ var addExtImage = {
 
 <?php if ( ! apply_filters( 'disable_captions', '' ) ) { ?>
 		if ( f.caption.value ) {
-			caption = f.caption.value.replace(/<[a-zA-Z0-9]+ [^<>]+>/g, function(a){
-				a = a.replace(/="[^"]+"/, function(b){
-					return b.replace(/'/g, '&#39;');
-				});
-				return a.replace(/"/g, "'");
+			caption = f.caption.value.replace(/\r\n|\r/g, '\n');
+			caption = caption.replace(/<[a-zA-Z0-9]+( [^<>]+)?>/g, function(a){
+				return a.replace(/[\r\n\t]+/, ' ');
 			});
 
-			caption = caption.replace(/"/g, '&quot;');
+			caption = caption.replace(/\s*\n\s*/g, '<br />');
 		}
 <?php } ?>
 
@@ -1563,7 +1545,7 @@ var addExtImage = {
 		}
 
 		if ( caption )
-			html = '[caption id="" align="'+t.align+'" width="'+t.width+'" caption="'+caption+'"]'+html+'[/caption]';
+			html = '[caption id="" align="'+t.align+'" width="'+t.width+'"]'+html+caption+'[/caption]';
 
 		var win = window.dialogArguments || opener || parent || top;
 		win.send_to_editor(html);
@@ -1810,10 +1792,11 @@ function media_upload_library_form($errors) {
 <input type="hidden" name="tab" value="<?php echo esc_attr( $tab ); ?>" />
 <input type="hidden" name="post_id" value="<?php echo (int) $post_id; ?>" />
 <input type="hidden" name="post_mime_type" value="<?php echo isset( $_GET['post_mime_type'] ) ? esc_attr( $_GET['post_mime_type'] ) : ''; ?>" />
+<input type="hidden" name="context" value="<?php echo isset( $_GET['context'] ) ? esc_attr( $_GET['context'] ) : ''; ?>" />
 
 <p id="media-search" class="search-box">
 	<label class="screen-reader-text" for="media-search-input"><?php _e('Search Media');?>:</label>
-	<input type="text" id="media-search-input" name="s" value="<?php the_search_query(); ?>" />
+	<input type="search" id="media-search-input" name="s" value="<?php the_search_query(); ?>" />
 	<?php submit_button( __( 'Search Media' ), 'button', '', false ); ?>
 </p>
 
@@ -1952,7 +1935,7 @@ function wp_media_insert_url_form( $default_view = 'image' ) {
 			<th valign="top" scope="row" class="label">
 				<span class="alignleft"><label for="caption">' . __('Image Caption') . '</label></span>
 			</th>
-			<td class="field"><textarea id="caption" class="code" name="caption"></textarea></td>
+			<td class="field"><textarea id="caption" name="caption"></textarea></td>
 		</tr>
 ';
 	} else {
@@ -2086,7 +2069,7 @@ add_action('post-plupload-upload-ui', 'media_upload_flash_bypass');
 function media_upload_html_bypass() {
 	?>
 	<p class="upload-html-bypass hide-if-no-js">
-	<?php _e('You are using the browser&#8217;s built-in file uploader. The new WordPress uploader includes multiple file selection and drag and drop capability. <a href="#">Switch to the new uploader</a>.'); ?>
+       <?php _e('You are using the browser&#8217;s built-in file uploader. The WordPress uploader includes multiple file selection and drag and drop capability. <a href="#">Switch to the multi-file uploader</a>.'); ?>
 	</p>
 	<?php
 }

@@ -300,7 +300,7 @@ As a new WordPress user, you should go to <a href=\"%s\">your dashboard</a> to d
 
 		// Delete any caps that snuck into the previously active blog. (Hardcoded to blog 1 for now.) TODO: Get previous_blog_id.
 		if ( !is_super_admin( $user_id ) && $user_id != 1 )
-			$wpdb->query( $wpdb->prepare("DELETE FROM $wpdb->usermeta WHERE user_id = %d AND meta_key = %s", $user_id, $wpdb->base_prefix.'1_capabilities') );
+			$wpdb->delete( $wpdb->usermeta, array( 'user_id' => $user_id , 'meta_key' => $wpdb->base_prefix.'1_capabilities' ) );
 	}
 }
 endif;
@@ -1277,15 +1277,35 @@ function upgrade_network() {
 			$start += 20;
 		}
 	}
+
 	// 3.0
 	if ( $wp_current_db_version < 13576 )
 		update_site_option( 'global_terms_enabled', '1' );
+
 	// 3.3
 	if ( $wp_current_db_version < 19390 )
 		update_site_option( 'initial_db_version', $wp_current_db_version );
+
 	if ( $wp_current_db_version < 19470 ) {
 		if ( false === get_site_option( 'active_sitewide_plugins' ) )
 			update_site_option( 'active_sitewide_plugins', array() );
+	}
+
+	// 3.4
+	if ( $wp_current_db_version < 20148 ) {
+		// 'allowedthemes' keys things by stylesheet. 'allowed_themes' keyed things by name.
+		$allowedthemes  = get_site_option( 'allowedthemes'  );
+		$allowed_themes = get_site_option( 'allowed_themes' );
+		if ( false === $allowedthemes && is_array( $allowed_themes ) && $allowed_themes ) {
+			$converted = array();
+			$themes = wp_get_themes();
+			foreach ( $themes as $stylesheet => $theme_data ) {
+				if ( isset( $allowed_themes[ $theme_data->get('Name') ] ) )
+					$converted[ $stylesheet ] = true;
+			}
+			update_site_option( 'allowedthemes', $converted );
+			delete_site_option( 'allowed_themes' );
+		}
 	}
 }
 
@@ -1492,7 +1512,7 @@ function dbDelta( $queries = '', $execute = true ) {
 	// Create a tablename index for an array ($cqueries) of queries
 	foreach($queries as $qry) {
 		if (preg_match("|CREATE TABLE ([^ ]*)|", $qry, $matches)) {
-			$cqueries[trim( strtolower($matches[1]), '`' )] = $qry;
+			$cqueries[ trim( $matches[1], '`' ) ] = $qry;
 			$for_update[$matches[1]] = 'Created table '.$matches[1];
 		} else if (preg_match("|CREATE DATABASE ([^ ]*)|", $qry, $matches)) {
 			array_unshift($cqueries, $qry);

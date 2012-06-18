@@ -346,7 +346,7 @@ EOD;
 		$post_content = '';
 		$post_excerpt = '';
 		$pubtimes     = '';
-		
+
 		if ( isset( $entry->title ) && is_array( $entry->title ) && !empty( $entry->title[1] ) )
 			$post_title = (string) $entry->title[1];
 		if ( isset( $entry->content ) && is_array( $entry->content ) && !empty( $entry->content[1] ) )
@@ -355,7 +355,7 @@ EOD;
 			$post_excerpt = (string) $entry->summary[1];
 		if ( !empty( $entry->published ) )
 			$pubtimes = (string) $entry->published;
-		
+
 		$pubtimes = $this->get_publish_time( $pubtimes );
 
 		$post_date = $pubtimes[0];
@@ -499,7 +499,7 @@ EOD;
 	 */
 	function get_attachment($postID = null) {
 		if ( !current_user_can( 'upload_files' ) )
-			$this->auth_required( __( 'Sorry, you do not have permission to upload files.' ) );
+			$this->auth_required( __( 'You do not have permission to upload files.' ) );
 
 		if ( !isset($postID) ) {
 			$this->get_attachments();
@@ -520,7 +520,7 @@ EOD;
 		$type = $this->get_accepted_content_type();
 
 		if ( !current_user_can('upload_files') )
-			$this->auth_required(__('You do not have permission to upload files.'));
+			$this->auth_required( __( 'You do not have permission to upload files.' ) );
 
 		$fp = fopen("php://input", "rb");
 		$bits = null;

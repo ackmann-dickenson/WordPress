@@ -411,8 +411,10 @@ function get_body_class( $class = '' ) {
 		$classes[] = 'archive';
 	if ( is_date() )
 		$classes[] = 'date';
-	if ( is_search() )
+	if ( is_search() ) {
 		$classes[] = 'search';
+		$classes[] = $wp_query->posts ? 'search-results' : 'search-no-results';
+	}
 	if ( is_paged() )
 		$classes[] = 'paged';
 	if ( is_attachment() )
@@ -491,11 +493,6 @@ function get_body_class( $class = '' ) {
 		} else {
 			$classes[] = 'page-template-default';
 		}
-	} elseif ( is_search() ) {
-		if ( !empty( $wp_query->posts ) )
-			$classes[] = 'search-results';
-		else
-			$classes[] = 'search-no-results';
 	}
 
 	if ( is_user_logged_in() )
@@ -504,7 +501,7 @@ function get_body_class( $class = '' ) {
 	if ( is_admin_bar_showing() )
 		$classes[] = 'admin-bar';
 
-	if ( get_background_image() || get_background_color() )
+	if ( get_theme_mod( 'background_color' ) || get_background_image() )
 		$classes[] = 'custom-background';
 
 	$page = $wp_query->get( 'page' );
@@ -1169,7 +1166,7 @@ function wp_get_attachment_link( $id = 0, $size = 'thumbnail', $permalink = fals
 	$post_title = esc_attr( $_post->post_title );
 
 	if ( $text )
-		$link_text = esc_attr( $text );
+		$link_text = $text;
 	elseif ( $size && 'none' != $size )
 		$link_text = wp_get_attachment_image( $id, $size, $icon );
 	else

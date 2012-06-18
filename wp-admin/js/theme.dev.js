@@ -1,3 +1,63 @@
+/**
+ * Theme Browsing
+ *
+ * Controls visibility of theme details on manage and install themes pages.
+ */
+jQuery( function($) {
+	$('#availablethemes').on( 'click', '.theme-detail', function (event) {
+		var theme   = $(this).closest('.available-theme'),
+			details = theme.find('.themedetaildiv');
+
+		if ( ! details.length ) {
+			details = theme.find('.install-theme-info .theme-details');
+			details = details.clone().addClass('themedetaildiv').appendTo( theme ).hide();
+		}
+
+		details.toggle();
+		event.preventDefault();
+	});
+});
+
+/**
+ * Theme Install
+ *
+ * Displays theme previews on theme install pages.
+ */
+jQuery( function($) {
+	if( ! window.postMessage )
+		return;
+
+	var preview = $('#theme-installer'),
+		info    = preview.find('.install-theme-info'),
+		panel   = preview.find('.wp-full-overlay-main'),
+		body    = $( document.body );
+
+	preview.on( 'click', '.close-full-overlay', function( event ) {
+		preview.fadeOut( 200, function() {
+			panel.empty();
+			body.removeClass('theme-installer-active full-overlay-active');
+		});
+		event.preventDefault();
+	});
+
+	preview.on( 'click', '.collapse-sidebar', function( event ) {
+		preview.toggleClass( 'collapsed' ).toggleClass( 'expanded' );
+		event.preventDefault();
+	});
+
+	$('#availablethemes').on( 'click', '.install-theme-preview', function( event ) {
+		var src;
+
+		info.html( $(this).closest('.installable-theme').find('.install-theme-info').html() );
+		src = info.find( '.theme-preview-url' ).val();
+		panel.html( '<iframe src="' + src + '" />');
+		preview.fadeIn( 200, function() {
+			body.addClass('theme-installer-active full-overlay-active');
+		});
+		event.preventDefault();
+	});
+});
+
 var ThemeViewer;
 
 (function($){
@@ -68,8 +128,6 @@ jQuery( document ).ready( function($) {
 var ThemeScroller;
 (function($){
 	ThemeScroller = {
-		nonce: '',
-		nextPage: 2, // By default, assume we're on the first page.
 		querying: false,
 		scrollPollingDelay: 500,
 		failedRetryDelay: 4000,
@@ -82,8 +140,7 @@ var ThemeScroller;
 		 * @access private
 		 */
 		init: function() {
-			var self = this,
-				startPage;
+			var self = this;
 
 			// Get out early if we don't have the required arguments.
 			if ( typeof ajaxurl === 'undefined' ||
@@ -95,10 +152,7 @@ var ThemeScroller;
 
 			// Handle inputs
 			this.nonce = $('#_ajax_fetch_list_nonce').val();
-
-			startPage = theme_list_args.paged;
-			if ( startPage !== undefined )
-				this.nextPage = ( startPage + 1 );
+			this.nextPage = ( theme_list_args.paged + 1 );
 
 			// Cache jQuery selectors
 			this.$outList = $('#availablethemes');
@@ -110,8 +164,7 @@ var ThemeScroller;
 			 * If there are more pages to query, then start polling to track
 			 * when user hits the bottom of the current page
 			 */
-			if ( theme_list_args.total_pages !== undefined &&
-				 theme_list_args.total_pages >= this.nextPage )
+			if ( theme_list_args.total_pages >= this.nextPage )
 				this.pollInterval =
 					setInterval( function() {
 						return self.poll();
@@ -144,9 +197,7 @@ var ThemeScroller;
 		 * @param results Array with results from this.ajax() query.
 		 */
 		process: function( results ) {
-			if ( ( results === undefined ) ||
-				 ( results.rows === undefined ) ||
-				 ( results.rows.indexOf( 'no-items' ) != -1 ) ) {
+			if ( results === undefined ) {
 				clearInterval( this.pollInterval );
 				return;
 			}

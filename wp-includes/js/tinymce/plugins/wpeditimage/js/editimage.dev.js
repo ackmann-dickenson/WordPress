@@ -3,17 +3,7 @@ var tinymce = null, tinyMCEPopup, tinyMCE, wpImage;
 
 tinyMCEPopup = {
 	init: function() {
-		var t = this, w, li, q, i, it;
-
-		li = ('' + document.location.search).replace(/^\?/, '').split('&');
-		q = {};
-		for ( i = 0; i < li.length; i++ ) {
-			it = li[i].split('=');
-			q[unescape(it[0])] = unescape(it[1]);
-		}
-
-		if (q.mce_rdomain)
-			document.domain = q.mce_rdomain;
+		var t = this, w, ti;
 
 		// Find window & API
 		w = t.getWin();
@@ -21,6 +11,7 @@ tinyMCEPopup = {
 		tinyMCE = w.tinyMCE;
 		t.editor = tinymce.EditorManager.activeEditor;
 		t.params = t.editor.windowManager.params;
+		t.features = t.editor.windowManager.features;
 
 		// Setup local DOM
 		t.dom = t.editor.windowManager.createInstance('tinymce.dom.DOMUtils', document);
@@ -28,7 +19,7 @@ tinyMCEPopup = {
 	},
 
 	getWin : function() {
-		return window.dialogArguments || opener || parent || top;
+		return (!window.frameElement && window.dialogArguments) || opener || parent || top;
 	},
 
 	getParam : function(n, dv) {
@@ -59,13 +50,13 @@ tinyMCEPopup = {
 	},
 
 	storeSelection : function() {
-		this.editor.windowManager.bookmark = tinyMCEPopup.editor.selection.getBookmark('simple');
+		this.editor.windowManager.bookmark = tinyMCEPopup.editor.selection.getBookmark(1);
 	},
 
 	restoreSelection : function() {
 		var t = tinyMCEPopup;
 
-		if (tinymce.isIE)
+		if ( tinymce.isIE )
 			t.editor.selection.moveToBookmark(t.editor.windowManager.bookmark);
 	}
 }
@@ -352,7 +343,7 @@ wpImage = {
 	update : function() {
 		var t = this, f = document.forms[0], ed = tinyMCEPopup.editor, el, b, fixSafari = null,
 			DL, P, A, DIV, do_caption = null, img_class = f.img_classes.value, html,
-			id, cap_id = '', cap, DT, DD, cap_width, div_cls, lnk = '', pa, aa;
+			id, cap_id = '', cap, DT, DD, cap_width, div_cls, lnk = '', pa, aa, caption;
 
 		tinyMCEPopup.restoreSelection();
 		el = ed.selection.getNode();
@@ -394,16 +385,11 @@ wpImage = {
 				if ( ! f.link_href.value.match(/https?:\/\//i) )
 					f.link_href.value = tinyMCEPopup.editor.documentBaseURI.toAbsolute(f.link_href.value);
 
-				if ( tinymce.isWebKit && ed.dom.hasClass(el, 'aligncenter') ) {
-					ed.dom.removeClass(el, 'aligncenter');
-					fixSafari = 1;
-				}
-
-				tinyMCEPopup.execCommand("CreateLink", false, "#mce_temp_url#", {skip_undo : 1});
-				if ( fixSafari ) ed.dom.addClass(el, 'aligncenter');
+				ed.getDoc().execCommand("unlink", false, null);
+				tinyMCEPopup.execCommand("mceInsertLink", false, "#mce_temp_url#", {skip_undo : 1});
 
 				tinymce.each(ed.dom.select("a"), function(n) {
-					if (ed.dom.getAttrib(n, 'href') == '#mce_temp_url#') {
+					if ( ed.dom.getAttrib(n, 'href') == '#mce_temp_url#' ) {
 
 						ed.dom.setAttribs(n, {
 							href : f.link_href.value,
@@ -430,6 +416,13 @@ wpImage = {
 		if ( do_caption ) {
 			cap_width = 10 + parseInt(f.width.value);
 			div_cls = (t.align == 'aligncenter') ? 'mceTemp mceIEcenter' : 'mceTemp';
+			caption = f.img_cap_text.value;
+
+			caption = caption.replace(/\r\n|\r/g, '\n').replace(/<[a-zA-Z0-9]+( [^<>]+)?>/g, function(a){
+				return a.replace(/[\r\n\t]+/, ' ');
+			});
+
+			caption = caption.replace(/\s*\n\s*/g, '<br />');
 
 			if ( DL ) {
 				ed.dom.setAttribs(DL, {
@@ -441,24 +434,26 @@ wpImage = {
 					ed.dom.setAttrib(DIV, 'class', div_cls);
 
 				if ( (DT = ed.dom.getParent(el, 'dt')) && (DD = DT.nextSibling) && ed.dom.hasClass(DD, 'wp-caption-dd') )
-					ed.dom.setHTML(DD, f.img_cap_text.value);
+					ed.dom.setHTML(DD, caption);
 
 			} else {
 				if ( (id = f.img_classes.value.match( /wp-image-([0-9]{1,6})/ )) && id[1] )
 					cap_id = 'attachment_'+id[1];
 
 				if ( f.link_href.value && (lnk = ed.dom.getParent(el, 'a')) ) {
-					if ( lnk.childNodes.length == 1 )
+					if ( lnk.childNodes.length == 1 ) {
 						html = ed.dom.getOuterHTML(lnk);
-					else {
+					} else {
 						html = ed.dom.getOuterHTML(lnk);
-						html = html.match(/<a[^>]+>/i);
+						html = html.match(/<a [^>]+>/i);
 						html = html+ed.dom.getOuterHTML(el)+'</a>';
 					}
-				} else html = ed.dom.getOuterHTML(el);
+				} else {
+					html = ed.dom.getOuterHTML(el);
+				}
 
 				html = '<dl id="'+cap_id+'" class="wp-caption '+t.align+'" style="width: '+cap_width+
-				'px"><dt class="wp-caption-dt">'+html+'</dt><dd class="wp-caption-dd">'+f.img_cap_text.value+'</dd></dl>';
+				'px"><dt class="wp-caption-dt">'+html+'</dt><dd class="wp-caption-dd">'+caption+'</dd></dl>';
 
 				cap = ed.dom.create('div', {'class': div_cls}, html);
 

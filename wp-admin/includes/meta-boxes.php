@@ -34,7 +34,7 @@ function post_submit_meta_box($post) {
 <?php } ?>
 <img src="<?php echo esc_url( admin_url( 'images/wpspin_light.gif' ) ); ?>" class="ajax-loading" id="draft-ajax-loading" alt="" />
 </div>
-
+<?php if ( $post_type_object->public ) : ?>
 <div id="preview-action">
 <?php
 if ( 'publish' == $post->post_status ) {
@@ -51,7 +51,7 @@ if ( 'publish' == $post->post_status ) {
 <a class="preview button" href="<?php echo $preview_link; ?>" target="wp-preview" id="post-preview" tabindex="4"><?php echo $preview_button; ?></a>
 <input type="hidden" name="wp-preview" id="wp-preview" value="" />
 </div>
-
+<?php endif; // public post type ?>
 <div class="clear"></div>
 </div><?php // /minor-publishing-actions ?>
 
@@ -356,7 +356,7 @@ function post_categories_meta_box( $post, $box ) {
 						<?php echo $tax->labels->parent_item_colon; ?>
 					</label>
 					<?php wp_dropdown_categories( array( 'taxonomy' => $taxonomy, 'hide_empty' => 0, 'name' => 'new'.$taxonomy.'_parent', 'orderby' => 'name', 'hierarchical' => 1, 'show_option_none' => '&mdash; ' . $tax->labels->parent_item . ' &mdash;', 'tab_index' => 3 ) ); ?>
-					<input type="button" id="<?php echo $taxonomy; ?>-add-submit" class="add:<?php echo $taxonomy ?>checklist:<?php echo $taxonomy ?>-add button category-add-sumbit" value="<?php echo esc_attr( $tax->labels->add_new_item ); ?>" tabindex="3" />
+					<input type="button" id="<?php echo $taxonomy; ?>-add-submit" class="add:<?php echo $taxonomy ?>checklist:<?php echo $taxonomy ?>-add button category-add-submit" value="<?php echo esc_attr( $tax->labels->add_new_item ); ?>" tabindex="3" />
 					<?php wp_nonce_field( 'add-'.$taxonomy, '_ajax_nonce-add-'.$taxonomy, false ); ?>
 					<span id="<?php echo $taxonomy; ?>-ajax-response"></span>
 				</p>
@@ -471,25 +471,30 @@ function post_comment_meta_box_thead($result) {
 function post_comment_meta_box($post) {
 	global $wpdb, $post_ID;
 
-	$total = $wpdb->get_var($wpdb->prepare("SELECT count(1) FROM $wpdb->comments WHERE comment_post_ID = '%d' AND ( comment_approved = '0' OR comment_approved = '1')", $post_ID));
-
-	if ( 1 > $total ) {
-		echo '<p>' . __('No comments yet.') . '</p>';
-		return;
-	}
-
 	wp_nonce_field( 'get-comments', 'add_comment_nonce', false );
+	?>
+	<p class="hide-if-no-js" id="add-new-comment"><a href="#commentstatusdiv" onclick="commentReply.addcomment(<?php echo $post_ID; ?>);return false;"><?php _e('Add comment'); ?></a></p>
+	<?php
 
+	$total = $wpdb->get_var($wpdb->prepare("SELECT count(1) FROM $wpdb->comments WHERE comment_post_ID = '%d' AND ( comment_approved = '0' OR comment_approved = '1')", $post_ID));
 	$wp_list_table = _get_list_table('WP_Post_Comments_List_Table');
 	$wp_list_table->display( true );
-?>
-<p class="hide-if-no-js"><a href="#commentstatusdiv" id="show-comments" onclick="commentsBox.get(<?php echo $total; ?>);return false;"><?php _e('Show comments'); ?></a> <img class="waiting" style="display:none;" src="<?php echo esc_url( admin_url( 'images/wpspin_light.gif' ) ); ?>" alt="" /></p>
-<?php
-	$hidden = get_hidden_meta_boxes('post');
-	if ( ! in_array('commentsdiv', $hidden) ) { ?>
-		<script type="text/javascript">jQuery(document).ready(function(){commentsBox.get(<?php echo $total; ?>, 10);});</script>
-<?php
+
+	if ( 1 > $total ) {
+		echo '<p id="no-comments">' . __('No comments yet.') . '</p>';
+	} else {
+		$hidden = get_hidden_meta_boxes('post');
+		if ( ! in_array('commentsdiv', $hidden) ) {
+			?>
+			<script type="text/javascript">jQuery(document).ready(function(){commentsBox.get(<?php echo $total; ?>, 10);});</script>
+			<?php
+		}
 	}
+
+	?>
+	<p class="hide-if-no-js hidden" id="show-comments"><a href="#commentstatusdiv" onclick="commentsBox.get(<?php echo $total; ?>);return false;"><?php _e('Show comments'); ?></a> <img class="waiting" style="display:none;" src="<?php echo esc_url( admin_url( 'images/wpspin_light.gif' ) ); ?>" alt="" /></p>
+	<?php
+
 	wp_comment_trashnotice();
 }
 
@@ -653,38 +658,41 @@ if ( !empty($_GET['action']) && 'edit' == $_GET['action'] && current_user_can('m
  *
  * @param object $link
  */
-function link_categories_meta_box($link) { ?>
-<ul id="category-tabs" class="category-tabs">
-	<li class="tabs"><a href="#categories-all"><?php _e( 'All Categories' ); ?></a></li>
-	<li class="hide-if-no-js"><a href="#categories-pop"><?php _e( 'Most Used' ); ?></a></li>
-</ul>
-
-<div id="categories-all" class="tabs-panel">
-	<ul id="categorychecklist" class="list:category categorychecklist form-no-clear">
-		<?php
-		if ( isset($link->link_id) )
-			wp_link_category_checklist($link->link_id);
-		else
-			wp_link_category_checklist();
-		?>
+function link_categories_meta_box($link) {
+?>
+<div id="taxonomy-linkcategory" class="categorydiv">
+	<ul id="category-tabs" class="category-tabs">
+		<li class="tabs"><a href="#categories-all"><?php _e( 'All Categories' ); ?></a></li>
+		<li class="hide-if-no-js"><a href="#categories-pop"><?php _e( 'Most Used' ); ?></a></li>
 	</ul>
-</div>
 
-<div id="categories-pop" class="tabs-panel" style="display: none;">
-	<ul id="categorychecklist-pop" class="categorychecklist form-no-clear">
-		<?php wp_popular_terms_checklist('link_category'); ?>
-	</ul>
-</div>
+	<div id="categories-all" class="tabs-panel">
+		<ul id="categorychecklist" class="list:category categorychecklist form-no-clear">
+			<?php
+			if ( isset($link->link_id) )
+				wp_link_category_checklist($link->link_id);
+			else
+				wp_link_category_checklist();
+			?>
+		</ul>
+	</div>
 
-<div id="category-adder" class="wp-hidden-children">
-	<h4><a id="category-add-toggle" href="#category-add"><?php _e( '+ Add New Category' ); ?></a></h4>
-	<p id="link-category-add" class="wp-hidden-child">
-		<label class="screen-reader-text" for="newcat"><?php _e( '+ Add New Category' ); ?></label>
-		<input type="text" name="newcat" id="newcat" class="form-required form-input-tip" value="<?php esc_attr_e( 'New category name' ); ?>" aria-required="true" />
-		<input type="button" id="category-add-submit" class="add:categorychecklist:linkcategorydiv button" value="<?php esc_attr_e( 'Add' ); ?>" />
-		<?php wp_nonce_field( 'add-link-category', '_ajax_nonce', false ); ?>
-		<span id="category-ajax-response"></span>
-	</p>
+	<div id="categories-pop" class="tabs-panel" style="display: none;">
+		<ul id="categorychecklist-pop" class="categorychecklist form-no-clear">
+			<?php wp_popular_terms_checklist('link_category'); ?>
+		</ul>
+	</div>
+
+	<div id="category-adder" class="wp-hidden-children">
+		<h4><a id="category-add-toggle" href="#category-add"><?php _e( '+ Add New Category' ); ?></a></h4>
+		<p id="link-category-add" class="wp-hidden-child">
+			<label class="screen-reader-text" for="newcat"><?php _e( '+ Add New Category' ); ?></label>
+			<input type="text" name="newcat" id="newcat" class="form-required form-input-tip" value="<?php esc_attr_e( 'New category name' ); ?>" aria-required="true" />
+			<input type="button" id="category-add-submit" class="add:categorychecklist:linkcategorydiv button" value="<?php esc_attr_e( 'Add' ); ?>" />
+			<?php wp_nonce_field( 'add-link-category', '_ajax_nonce', false ); ?>
+			<span id="category-ajax-response"></span>
+		</p>
+	</div>
 </div>
 <?php
 }
@@ -751,111 +759,110 @@ function xfn_check( $class, $value = '', $deprecated = '' ) {
  */
 function link_xfn_meta_box($link) {
 ?>
-<table class="editform" style="width: 100%;" cellspacing="2" cellpadding="5">
+<table class="links-table" cellspacing="0">
 	<tr>
-		<th style="width: 20%;" scope="row"><label for="link_rel"><?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('rel:') ?></label></th>
-		<td style="width: 80%;"><input type="text" name="link_rel" id="link_rel" size="50" value="<?php echo ( isset( $link->link_rel ) ? esc_attr($link->link_rel) : ''); ?>" /></td>
+		<th scope="row"><label for="link_rel"><?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('rel:') ?></label></th>
+		<td><input type="text" name="link_rel" id="link_rel" value="<?php echo ( isset( $link->link_rel ) ? esc_attr($link->link_rel) : ''); ?>" /></td>
 	</tr>
 	<tr>
-		<td colspan="2">
-			<table cellpadding="3" cellspacing="5" class="form-table">
-				<tr>
-					<th scope="row"> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('identity') ?> </th>
-					<td><fieldset><legend class="screen-reader-text"><span> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('identity') ?> </span></legend>
-						<label for="me">
-						<input type="checkbox" name="identity" value="me" id="me" <?php xfn_check('identity', 'me'); ?> />
-						<?php _e('another web address of mine') ?></label>
-					</fieldset></td>
-				</tr>
-				<tr>
-					<th scope="row"> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('friendship') ?> </th>
-					<td><fieldset><legend class="screen-reader-text"><span> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('friendship') ?> </span></legend>
-						<label for="contact">
-						<input class="valinp" type="radio" name="friendship" value="contact" id="contact" <?php xfn_check('friendship', 'contact'); ?> /> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('contact') ?></label>
-						<label for="acquaintance">
-						<input class="valinp" type="radio" name="friendship" value="acquaintance" id="acquaintance" <?php xfn_check('friendship', 'acquaintance'); ?> /> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('acquaintance') ?></label>
-						<label for="friend">
-						<input class="valinp" type="radio" name="friendship" value="friend" id="friend" <?php xfn_check('friendship', 'friend'); ?> /> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('friend') ?></label>
-						<label for="friendship">
-						<input name="friendship" type="radio" class="valinp" value="" id="friendship" <?php xfn_check('friendship'); ?> /> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('none') ?></label>
-					</fieldset></td>
-				</tr>
-				<tr>
-					<th scope="row"> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('physical') ?> </th>
-					<td><fieldset><legend class="screen-reader-text"><span> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('physical') ?> </span></legend>
-						<label for="met">
-						<input class="valinp" type="checkbox" name="physical" value="met" id="met" <?php xfn_check('physical', 'met'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('met') ?></label>
-					</fieldset></td>
-				</tr>
-				<tr>
-					<th scope="row"> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('professional') ?> </th>
-					<td><fieldset><legend class="screen-reader-text"><span> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('professional') ?> </span></legend>
-						<label for="co-worker">
-						<input class="valinp" type="checkbox" name="professional" value="co-worker" id="co-worker" <?php xfn_check('professional', 'co-worker'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('co-worker') ?></label>
-						<label for="colleague">
-						<input class="valinp" type="checkbox" name="professional" value="colleague" id="colleague" <?php xfn_check('professional', 'colleague'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('colleague') ?></label>
-					</fieldset></td>
-				</tr>
-				<tr>
-					<th scope="row"> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('geographical') ?> </th>
-					<td><fieldset><legend class="screen-reader-text"><span> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('geographical') ?> </span></legend>
-						<label for="co-resident">
-						<input class="valinp" type="radio" name="geographical" value="co-resident" id="co-resident" <?php xfn_check('geographical', 'co-resident'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('co-resident') ?></label>
-						<label for="neighbor">
-						<input class="valinp" type="radio" name="geographical" value="neighbor" id="neighbor" <?php xfn_check('geographical', 'neighbor'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('neighbor') ?></label>
-						<label for="geographical">
-						<input class="valinp" type="radio" name="geographical" value="" id="geographical" <?php xfn_check('geographical'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('none') ?></label>
-					</fieldset></td>
-				</tr>
-				<tr>
-					<th scope="row"> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('family') ?> </th>
-					<td><fieldset><legend class="screen-reader-text"><span> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('family') ?> </span></legend>
-						<label for="child">
-						<input class="valinp" type="radio" name="family" value="child" id="child" <?php xfn_check('family', 'child'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('child') ?></label>
-						<label for="kin">
-						<input class="valinp" type="radio" name="family" value="kin" id="kin" <?php xfn_check('family', 'kin'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('kin') ?></label>
-						<label for="parent">
-						<input class="valinp" type="radio" name="family" value="parent" id="parent" <?php xfn_check('family', 'parent'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('parent') ?></label>
-						<label for="sibling">
-						<input class="valinp" type="radio" name="family" value="sibling" id="sibling" <?php xfn_check('family', 'sibling'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('sibling') ?></label>
-						<label for="spouse">
-						<input class="valinp" type="radio" name="family" value="spouse" id="spouse" <?php xfn_check('family', 'spouse'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('spouse') ?></label>
-						<label for="family">
-						<input class="valinp" type="radio" name="family" value="" id="family" <?php xfn_check('family'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('none') ?></label>
-					</fieldset></td>
-				</tr>
-				<tr>
-					<th scope="row"> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('romantic') ?> </th>
-					<td><fieldset><legend class="screen-reader-text"><span> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('romantic') ?> </span></legend>
-						<label for="muse">
-						<input class="valinp" type="checkbox" name="romantic" value="muse" id="muse" <?php xfn_check('romantic', 'muse'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('muse') ?></label>
-						<label for="crush">
-						<input class="valinp" type="checkbox" name="romantic" value="crush" id="crush" <?php xfn_check('romantic', 'crush'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('crush') ?></label>
-						<label for="date">
-						<input class="valinp" type="checkbox" name="romantic" value="date" id="date" <?php xfn_check('romantic', 'date'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('date') ?></label>
-						<label for="romantic">
-						<input class="valinp" type="checkbox" name="romantic" value="sweetheart" id="romantic" <?php xfn_check('romantic', 'sweetheart'); ?> />
-						<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('sweetheart') ?></label>
-					</fieldset></td>
-				</tr>
-			</table>
-		</td>
+		<th scope="row"><?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('identity') ?></th>
+		<td><fieldset><legend class="screen-reader-text"><span><?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('identity') ?></span></legend>
+			<label for="me">
+			<input type="checkbox" name="identity" value="me" id="me" <?php xfn_check('identity', 'me'); ?> />
+			<?php _e('another web address of mine') ?></label>
+		</fieldset></td>
 	</tr>
+	<tr>
+		<th scope="row"><?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('friendship') ?></th>
+		<td><fieldset><legend class="screen-reader-text"><span><?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('friendship') ?></span></legend>
+			<label for="contact">
+			<input class="valinp" type="radio" name="friendship" value="contact" id="contact" <?php xfn_check('friendship', 'contact'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('contact') ?>
+			</label>
+			<label for="acquaintance">
+			<input class="valinp" type="radio" name="friendship" value="acquaintance" id="acquaintance" <?php xfn_check('friendship', 'acquaintance'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('acquaintance') ?>
+			</label>
+			<label for="friend">
+			<input class="valinp" type="radio" name="friendship" value="friend" id="friend" <?php xfn_check('friendship', 'friend'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('friend') ?>
+			</label>
+			<label for="friendship">
+			<input name="friendship" type="radio" class="valinp" value="" id="friendship" <?php xfn_check('friendship'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('none') ?>
+			</label>
+		</fieldset></td>
+	</tr>
+	<tr>
+		<th scope="row"> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('physical') ?> </th>
+		<td><fieldset><legend class="screen-reader-text"><span><?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('physical') ?></span></legend>
+			<label for="met">
+			<input class="valinp" type="checkbox" name="physical" value="met" id="met" <?php xfn_check('physical', 'met'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('met') ?>
+			</label>
+		</fieldset></td>
+	</tr>
+	<tr>
+		<th scope="row"> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('professional') ?> </th>
+		<td><fieldset><legend class="screen-reader-text"><span><?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('professional') ?></span></legend>
+			<label for="co-worker">
+			<input class="valinp" type="checkbox" name="professional" value="co-worker" id="co-worker" <?php xfn_check('professional', 'co-worker'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('co-worker') ?>
+			</label>
+			<label for="colleague">
+			<input class="valinp" type="checkbox" name="professional" value="colleague" id="colleague" <?php xfn_check('professional', 'colleague'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('colleague') ?>
+			</label>
+		</fieldset></td>
+	</tr>
+	<tr>
+		<th scope="row"><?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('geographical') ?></th>
+		<td><fieldset><legend class="screen-reader-text"><span> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('geographical') ?> </span></legend>
+			<label for="co-resident">
+			<input class="valinp" type="radio" name="geographical" value="co-resident" id="co-resident" <?php xfn_check('geographical', 'co-resident'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('co-resident') ?>
+			</label>
+			<label for="neighbor">
+			<input class="valinp" type="radio" name="geographical" value="neighbor" id="neighbor" <?php xfn_check('geographical', 'neighbor'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('neighbor') ?>
+			</label>
+			<label for="geographical">
+			<input class="valinp" type="radio" name="geographical" value="" id="geographical" <?php xfn_check('geographical'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('none') ?>
+			</label>
+		</fieldset></td>
+	</tr>
+	<tr>
+		<th scope="row"><?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('family') ?></th>
+		<td><fieldset><legend class="screen-reader-text"><span> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('family') ?> </span></legend>
+			<label for="child">
+			<input class="valinp" type="radio" name="family" value="child" id="child" <?php xfn_check('family', 'child'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('child') ?>
+			</label>
+			<label for="kin">
+			<input class="valinp" type="radio" name="family" value="kin" id="kin" <?php xfn_check('family', 'kin'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('kin') ?>
+			</label>
+			<label for="parent">
+			<input class="valinp" type="radio" name="family" value="parent" id="parent" <?php xfn_check('family', 'parent'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('parent') ?>
+			</label>
+			<label for="sibling">
+			<input class="valinp" type="radio" name="family" value="sibling" id="sibling" <?php xfn_check('family', 'sibling'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('sibling') ?>
+			</label>
+			<label for="spouse">
+			<input class="valinp" type="radio" name="family" value="spouse" id="spouse" <?php xfn_check('family', 'spouse'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('spouse') ?>
+			</label>
+			<label for="family">
+			<input class="valinp" type="radio" name="family" value="" id="family" <?php xfn_check('family'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('none') ?>
+			</label>
+		</fieldset></td>
+	</tr>
+	<tr>
+		<th scope="row"><?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('romantic') ?></th>
+		<td><fieldset><legend class="screen-reader-text"><span> <?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('romantic') ?> </span></legend>
+			<label for="muse">
+			<input class="valinp" type="checkbox" name="romantic" value="muse" id="muse" <?php xfn_check('romantic', 'muse'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('muse') ?>
+			</label>
+			<label for="crush">
+			<input class="valinp" type="checkbox" name="romantic" value="crush" id="crush" <?php xfn_check('romantic', 'crush'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('crush') ?>
+			</label>
+			<label for="date">
+			<input class="valinp" type="checkbox" name="romantic" value="date" id="date" <?php xfn_check('romantic', 'date'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('date') ?>
+			</label>
+			<label for="romantic">
+			<input class="valinp" type="checkbox" name="romantic" value="sweetheart" id="romantic" <?php xfn_check('romantic', 'sweetheart'); ?> />&nbsp;<?php /* translators: xfn: http://gmpg.org/xfn/ */ _e('sweetheart') ?>
+			</label>
+		</fieldset></td>
+	</tr>
+
 </table>
 <p><?php _e('If the link is to a person, you can specify your relationship with them using the above form. If you would like to learn more about the idea check out <a href="http://gmpg.org/xfn/">XFN</a>.'); ?></p>
 <?php
@@ -870,28 +877,28 @@ function link_xfn_meta_box($link) {
  */
 function link_advanced_meta_box($link) {
 ?>
-<table class="form-table" style="width: 100%;" cellspacing="2" cellpadding="5">
-	<tr class="form-field">
-		<th valign="top"  scope="row"><label for="link_image"><?php _e('Image Address') ?></label></th>
-		<td><input type="text" name="link_image" class="code" id="link_image" size="50" value="<?php echo ( isset( $link->link_image ) ? esc_attr($link->link_image) : ''); ?>" style="width: 95%" /></td>
+<table class="links-table" cellpadding="0">
+	<tr>
+		<th scope="row"><label for="link_image"><?php _e('Image Address') ?></label></th>
+		<td><input type="text" name="link_image" class="code" id="link_image" value="<?php echo ( isset( $link->link_image ) ? esc_attr($link->link_image) : ''); ?>" /></td>
 	</tr>
-	<tr class="form-field">
-		<th valign="top"  scope="row"><label for="rss_uri"><?php _e('RSS Address') ?></label></th>
-		<td><input name="link_rss" class="code" type="text" id="rss_uri" value="<?php echo ( isset( $link->link_rss ) ? esc_attr($link->link_rss) : ''); ?>" size="50" style="width: 95%" /></td>
+	<tr>
+		<th scope="row"><label for="rss_uri"><?php _e('RSS Address') ?></label></th>
+		<td><input name="link_rss" class="code" type="text" id="rss_uri" value="<?php echo ( isset( $link->link_rss ) ? esc_attr($link->link_rss) : ''); ?>" /></td>
 	</tr>
-	<tr class="form-field">
-		<th valign="top"  scope="row"><label for="link_notes"><?php _e('Notes') ?></label></th>
-		<td><textarea name="link_notes" id="link_notes" cols="50" rows="10" style="width: 95%"><?php echo ( isset( $link->link_notes ) ? $link->link_notes : ''); // textarea_escaped ?></textarea></td>
+	<tr>
+		<th scope="row"><label for="link_notes"><?php _e('Notes') ?></label></th>
+		<td><textarea name="link_notes" id="link_notes" rows="10"><?php echo ( isset( $link->link_notes ) ? $link->link_notes : ''); // textarea_escaped ?></textarea></td>
 	</tr>
-	<tr class="form-field">
-		<th valign="top"  scope="row"><label for="link_rating"><?php _e('Rating') ?></label></th>
+	<tr>
+		<th scope="row"><label for="link_rating"><?php _e('Rating') ?></label></th>
 		<td><select name="link_rating" id="link_rating" size="1">
 		<?php
-			for ($r = 0; $r <= 10; $r++) {
-				echo('            <option value="'. esc_attr($r) .'" ');
-				if ( isset($link->link_rating) && $link->link_rating == $r)
-					echo 'selected="selected"';
-				echo('>'.$r.'</option>');
+			for ( $r = 0; $r <= 10; $r++ ) {
+				echo '<option value="' . $r . '"';
+				if ( isset($link->link_rating) && $link->link_rating == $r )
+					echo ' selected="selected"';
+				echo('>' . $r . '</option>');
 			}
 		?></select>&nbsp;<?php _e('(Leave at 0 for no rating.)') ?>
 		</td>

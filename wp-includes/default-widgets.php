@@ -106,12 +106,6 @@ class WP_Widget_Links extends WP_Widget {
 		$order = $orderby == 'rating' ? 'DESC' : 'ASC';
 		$limit = isset( $instance['limit'] ) ? $instance['limit'] : -1;
 
-		if ( is_admin() && !$category ) {
-			// Display All Links widget as such in the widgets screen
-			echo $before_widget . $before_title . _x('All Links', 'links widget') . $after_title . $after_widget;
-			return;
-		}
-
 		$before_widget = preg_replace('/id="[^"]*"/','id="%id"', $before_widget);
 		wp_list_bookmarks(apply_filters('widget_links_args', array(
 			'title_before' => $before_title, 'title_after' => $after_title,
@@ -1059,7 +1053,7 @@ class WP_Widget_Tag_Cloud extends WP_Widget {
 	<input type="text" class="widefat" id="<?php echo $this->get_field_id('title'); ?>" name="<?php echo $this->get_field_name('title'); ?>" value="<?php if (isset ( $instance['title'])) {echo esc_attr( $instance['title'] );} ?>" /></p>
 	<p><label for="<?php echo $this->get_field_id('taxonomy'); ?>"><?php _e('Taxonomy:') ?></label>
 	<select class="widefat" id="<?php echo $this->get_field_id('taxonomy'); ?>" name="<?php echo $this->get_field_name('taxonomy'); ?>">
-	<?php foreach ( get_object_taxonomies('post') as $taxonomy ) :
+	<?php foreach ( get_taxonomies() as $taxonomy ) :
 				$tax = get_taxonomy($taxonomy);
 				if ( !$tax->show_tagcloud || empty($tax->labels->name) )
 					continue;

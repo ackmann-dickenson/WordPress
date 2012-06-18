@@ -27,12 +27,12 @@ if ( !function_exists('wp_set_current_user') ) :
 function wp_set_current_user($id, $name = '') {
 	global $current_user;
 
-	if ( isset($current_user) && ($id == $current_user->ID) )
+	if ( isset( $current_user ) && ( $current_user instanceof WP_User ) && ( $id == $current_user->ID ) )
 		return $current_user;
 
-	$current_user = new WP_User($id, $name);
+	$current_user = new WP_User( $id, $name );
 
-	setup_userdata($current_user->ID);
+	setup_userdata( $current_user->ID );
 
 	do_action('set_current_user');
 
@@ -74,20 +74,37 @@ if ( !function_exists('get_currentuserinfo') ) :
 function get_currentuserinfo() {
 	global $current_user;
 
-	if ( defined('XMLRPC_REQUEST') && XMLRPC_REQUEST )
-		return false;
+	if ( ! empty( $current_user ) ) {
+		if ( $current_user instanceof WP_User )
+			return;
 
-	if ( ! empty($current_user) )
-		return;
+		// Upgrade stdClass to WP_User
+		if ( is_object( $current_user ) && isset( $current_user->ID ) ) {
+			$cur_id = $current_user->ID;
+			$current_user = null;
+			wp_set_current_user( $cur_id );
+			return;
+		}
+
+		// $current_user has a junk value. Force to WP_User with ID 0.
+		$current_user = null;
+		wp_set_current_user( 0 );
+		return false;
+	}
+
+	if ( defined('XMLRPC_REQUEST') && XMLRPC_REQUEST ) {
+		wp_set_current_user( 0 );
+		return false;
+	}
 
 	if ( ! $user = wp_validate_auth_cookie() ) {
-		 if ( is_blog_admin() || is_network_admin() || empty($_COOKIE[LOGGED_IN_COOKIE]) || !$user = wp_validate_auth_cookie($_COOKIE[LOGGED_IN_COOKIE], 'logged_in') ) {
-		 	wp_set_current_user(0);
+		 if ( is_blog_admin() || is_network_admin() || empty( $_COOKIE[LOGGED_IN_COOKIE] ) || !$user = wp_validate_auth_cookie( $_COOKIE[LOGGED_IN_COOKIE], 'logged_in' ) ) {
+		 	wp_set_current_user( 0 );
 		 	return false;
 		 }
 	}
 
-	wp_set_current_user($user);
+	wp_set_current_user( $user );
 }
 endif;
 
@@ -709,7 +726,7 @@ if ( !function_exists('is_user_logged_in') ) :
 function is_user_logged_in() {
 	$user = wp_get_current_user();
 
-	if ( empty( $user->ID ) )
+	if ( ! $user->exists() )
 		return false;
 
 	return true;
@@ -1308,7 +1325,9 @@ if ( !function_exists('wp_salt') ) :
  * @return string Salt value
  */
 function wp_salt( $scheme = 'auth' ) {
-	global $wp_secret_key_default; // This is set for localized builds for versions > 3.4.0.
+	static $cached_salts = array();
+	if ( isset( $cached_salts[ $scheme ] ) )
+		return apply_filters( 'salt', $cached_salts[ $scheme ], $scheme );
 
 	static $duplicated_keys;
 	if ( null === $duplicated_keys ) {
@@ -1321,8 +1340,6 @@ function wp_salt( $scheme = 'auth' ) {
 				$duplicated_keys[ $value ] = isset( $duplicated_keys[ $value ] );
 			}
 		}
-		if ( ! empty( $wp_secret_key_default ) )
-			$duplicated_keys[ $wp_secret_key_default ] = true;
 	}
 
 	$key = $salt = '';
@@ -1355,7 +1372,8 @@ function wp_salt( $scheme = 'auth' ) {
 		$salt = hash_hmac( 'md5', $scheme, $key );
 	}
 
-	return apply_filters('salt', $key . $salt, $scheme);
+	$cached_salts[ $scheme ] = $key . $salt;
+	return apply_filters( 'salt', $cached_salts[ $scheme ], $scheme );
 }
 endif;
 
@@ -1625,7 +1643,7 @@ function get_avatar( $id_or_email, $size = '96', $default = '', $alt = false ) {
 	elseif ( !empty($email) && 'gravatar_default' == $default )
 		$default = '';
 	elseif ( 'gravatar_default' == $default )
-		$default = "$host/avatar/s={$size}";
+		$default = "$host/avatar/?s={$size}";
 	elseif ( empty($email) )
 		$default = "$host/avatar/?d=$default&amp;s={$size}";
 	elseif ( strpos($default, 'http://') === 0 )

@@ -30,11 +30,16 @@ require_once( ABSPATH . 'wp-admin/includes/admin.php' );
 require_once( ABSPATH . 'wp-admin/includes/ajax-actions.php' );
 
 @header( 'Content-Type: text/html; charset=' . get_option( 'blog_charset' ) );
+@header( 'X-Robots-Tag: noindex' );
+
 send_nosniff_header();
 
 do_action( 'admin_init' );
 
-$core_actions_get = array( 'fetch-list', 'ajax-tag-search', 'wp-compression-test', 'imgedit-preview', 'oembed-cache', 'autocomplete-user' );
+$core_actions_get = array(
+	'fetch-list', 'ajax-tag-search', 'wp-compression-test', 'imgedit-preview', 'oembed-cache',
+	'autocomplete-user', 'dashboard-widgets', 'logged-in',
+);
 
 $core_actions_post = array(
 	'oembed-cache', 'image-editor', 'delete-comment', 'delete-tag', 'delete-link',
@@ -45,7 +50,7 @@ $core_actions_post = array(
 	'menu-locations-save', 'menu-quick-search', 'meta-box-order', 'get-permalink',
 	'sample-permalink', 'inline-save', 'inline-save-tax', 'find_posts', 'widgets-order',
 	'save-widget', 'set-post-thumbnail', 'date_format', 'time_format', 'wp-fullscreen-save-post',
-	'wp-remove-post-lock', 'dismiss-wp-pointer',
+	'wp-remove-post-lock', 'dismiss-wp-pointer', 'upload-attachment',
 );
 
 // Register core Ajax calls.
@@ -58,9 +63,9 @@ if ( ! empty( $_POST['action'] ) && in_array( $_POST['action'], $core_actions_po
 add_action( 'wp_ajax_nopriv_autosave', 'wp_ajax_nopriv_autosave', 1 );
 
 if ( is_user_logged_in() )
-	do_action( 'wp_ajax_' . $_REQUEST['action'], $_REQUEST['action'] ); // Authenticated actions
+	do_action( 'wp_ajax_' . $_REQUEST['action'] ); // Authenticated actions
 else
-	do_action( 'wp_ajax_nopriv_' . $_REQUEST['action'], $_REQUEST['action'] ); // Non-admin actions
+	do_action( 'wp_ajax_nopriv_' . $_REQUEST['action'] ); // Non-admin actions
 
 // Default status
 die( '0' );

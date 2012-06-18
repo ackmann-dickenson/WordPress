@@ -237,16 +237,27 @@ function wp_delete_user( $id, $reassign = 'novalue' ) {
 	global $wpdb;
 
 	$id = (int) $id;
+	$user = new WP_User( $id );
 
 	// allow for transaction statement
 	do_action('delete_user', $id);
 
 	if ( 'novalue' === $reassign || null === $reassign ) {
-		$post_ids = $wpdb->get_col( $wpdb->prepare("SELECT ID FROM $wpdb->posts WHERE post_author = %d", $id) );
+		$post_types_to_delete = array();
+		foreach ( get_post_types( array(), 'objects' ) as $post_type ) {
+			if ( $post_type->delete_with_user ) {
+				$post_types_to_delete[] = $post_type->name;
+			} elseif ( null === $post_type->delete_with_user && post_type_supports( $post_type->name, 'author' ) ) {
+				$post_types_to_delete[] = $post_type->name;
+			}
+		}
 
+		$post_types_to_delete = apply_filters( 'post_types_to_delete_with_user', $post_types_to_delete, $id );
+		$post_types_to_delete = implode( "', '", $post_types_to_delete );
+		$post_ids = $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM $wpdb->posts WHERE post_author = %d AND post_type IN ('$post_types_to_delete')", $id ) );
 		if ( $post_ids ) {
 			foreach ( $post_ids as $post_id )
-				wp_delete_post($post_id);
+				wp_delete_post( $post_id );
 		}
 
 		// Clean links
@@ -262,16 +273,18 @@ function wp_delete_user( $id, $reassign = 'novalue' ) {
 		$wpdb->update( $wpdb->links, array('link_owner' => $reassign), array('link_owner' => $id) );
 	}
 
-	clean_user_cache($id);
-
 	// FINALLY, delete user
-	if ( !is_multisite() ) {
-		$wpdb->query( $wpdb->prepare("DELETE FROM $wpdb->usermeta WHERE user_id = %d", $id) );
-		$wpdb->query( $wpdb->prepare("DELETE FROM $wpdb->users WHERE ID = %d", $id) );
+	if ( is_multisite() ) {
+		remove_user_from_blog( $id, get_current_blog_id() );
 	} else {
-		$level_key = $wpdb->get_blog_prefix() . 'capabilities'; // wpmu site admins don't have user_levels
-		$wpdb->query("DELETE FROM $wpdb->usermeta WHERE user_id = $id AND meta_key = '{$level_key}'");
+		$meta = $wpdb->get_col( $wpdb->prepare( "SELECT umeta_id FROM $wpdb->usermeta WHERE user_id = %d", $id ) );
+		foreach ( $meta as $mid )
+			delete_metadata_by_mid( 'user', $mid );
+
+		$wpdb->delete( $wpdb->users, array( 'ID' => $id ) );
 	}
+
+	clean_user_cache( $user );
 
 	// allow for commit transaction
 	do_action('deleted_user', $id);

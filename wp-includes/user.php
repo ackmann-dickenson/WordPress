@@ -259,7 +259,7 @@ function get_user_option( $option, $user = 0, $deprecated = '' ) {
 	else
 		$user = new WP_User( $user );
 
-	if ( ! isset( $user->ID ) )
+	if ( ! $user->exists() )
 		return false;
 
 	if ( $user->has_prop( $wpdb->prefix . $option ) ) // Blog specific
@@ -652,7 +652,7 @@ function get_users( $args = array() ) {
  *
  * @param int $user_id User ID
  * @param bool $all Whether to retrieve all blogs, or only blogs that are not marked as deleted, archived, or spam.
- * @return array A list of the user's blogs. False if the user was not found or an empty array if the user has no blogs.
+ * @return array A list of the user's blogs. An empty array if the user doesn't exist or belongs to no blogs.
  */
 function get_blogs_of_user( $user_id, $all = false ) {
 	global $wpdb;
@@ -661,11 +661,11 @@ function get_blogs_of_user( $user_id, $all = false ) {
 
 	// Logged out users can't have blogs
 	if ( empty( $user_id ) )
-		return false;
+		return array();
 
 	$keys = get_user_meta( $user_id );
 	if ( empty( $keys ) )
-		return false;
+		return array();
 
 	if ( ! is_multisite() ) {
 		$blog_id = get_current_blog_id();
@@ -745,10 +745,7 @@ function is_user_member_of_blog( $user_id = 0, $blog_id = 0 ) {
 		$blog_id = get_current_blog_id();
 
 	$blogs = get_blogs_of_user( $user_id );
-	if ( is_array( $blogs ) )
-		return array_key_exists( $blog_id, $blogs );
-	else
-		return false;
+	return array_key_exists( $blog_id, $blogs );
 }
 
 /**
@@ -888,14 +885,14 @@ function count_users($strategy = 'time') {
 		$users_of_blog = $wpdb->get_col( "SELECT meta_value FROM $wpdb->usermeta WHERE meta_key = '{$blog_prefix}capabilities'" );
 
 		foreach ( $users_of_blog as $caps_meta ) {
-			$b_roles = unserialize($caps_meta);
-			if ( is_array($b_roles) ) {
-				foreach ( $b_roles as $b_role => $val ) {
-					if ( isset($avail_roles[$b_role]) ) {
-						$avail_roles[$b_role]++;
-					} else {
-						$avail_roles[$b_role] = 1;
-					}
+			$b_roles = maybe_unserialize($caps_meta);
+			if ( ! is_array( $b_roles ) )
+				continue;
+			foreach ( $b_roles as $b_role => $val ) {
+				if ( isset($avail_roles[$b_role]) ) {
+					$avail_roles[$b_role]++;
+				} else {
+					$avail_roles[$b_role] = 1;
 				}
 			}
 		}
@@ -940,7 +937,7 @@ function setup_userdata($for_user_id = '') {
 	$user_ID    = (int) $user->ID;
 	$user_level = (int) isset($user->user_level) ? $user->user_level : 0;
 
-	if ( 0 == $user->ID ) {
+	if ( ! $user->exists() ) {
 		$user_login = $user_email = $user_url = $user_pass_md5 = $user_identity = '';
 		return;
 	}
@@ -1061,17 +1058,12 @@ function wp_dropdown_users( $args = '' ) {
  * when calling filters.
  *
  * @since 2.3.0
- * @uses apply_filters() Calls 'edit_$field' and '{$field_no_prefix}_edit_pre' passing $value and
- *  $user_id if $context == 'edit' and field name prefix == 'user_'.
- *
- * @uses apply_filters() Calls 'edit_user_$field' passing $value and $user_id if $context == 'db'.
- * @uses apply_filters() Calls 'pre_$field' passing $value if $context == 'db' and field name prefix == 'user_'.
- * @uses apply_filters() Calls '{$field}_pre' passing $value if $context == 'db' and field name prefix != 'user_'.
- *
+ * @uses apply_filters() Calls 'edit_$field' passing $value and $user_id if $context == 'edit'.
+ *  $field is prefixed with 'user_' if it isn't already.
+ * @uses apply_filters() Calls 'pre_$field' passing $value if $context == 'db'. $field is prefixed with
+ *  'user_' if it isn't already.
  * @uses apply_filters() Calls '$field' passing $value, $user_id and $context if $context == anything
- *  other than 'raw', 'edit' and 'db' and field name prefix == 'user_'.
- * @uses apply_filters() Calls 'user_$field' passing $value if $context == anything other than 'raw',
- *  'edit' and 'db' and field name prefix != 'user_'.
+ *  other than 'raw', 'edit' and 'db'. $field is prefixed with 'user_' if it isn't already.
  *
  * @param string $field The user Object field name.
  * @param mixed $value The user Object value.
@@ -1091,11 +1083,7 @@ function sanitize_user_field($field, $value, $user_id, $context) {
 	if ( !is_string($value) && !is_numeric($value) )
 		return $value;
 
-	$prefixed = false;
-	if ( false !== strpos($field, 'user_') ) {
-		$prefixed = true;
-		$field_no_prefix = str_replace('user_', '', $field);
-	}
+	$prefixed = false !== strpos( $field, 'user_' );
 
 	if ( 'edit' == $context ) {
 		if ( $prefixed ) {
@@ -1152,15 +1140,19 @@ function update_user_caches($user) {
  *
  * @since 3.0.0
  *
- * @param int $id User ID
+ * @param WP_User|int $user User object or ID to be cleaned from the cache
  */
-function clean_user_cache($id) {
-	$user = WP_User::get_data_by( 'id', $id );
+function clean_user_cache( $user ) {
+	if ( is_numeric( $user ) )
+		$user = new WP_User( $user );
 
-	wp_cache_delete($id, 'users');
-	wp_cache_delete($user->user_login, 'userlogins');
-	wp_cache_delete($user->user_email, 'useremail');
-	wp_cache_delete($user->user_nicename, 'userslugs');
+	if ( ! $user->exists() )
+		return;
+
+	wp_cache_delete( $user->ID, 'users' );
+	wp_cache_delete( $user->user_login, 'userlogins' );
+	wp_cache_delete( $user->user_email, 'useremail' );
+	wp_cache_delete( $user->user_nicename, 'userslugs' );
 }
 
 /**

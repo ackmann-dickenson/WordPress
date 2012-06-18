@@ -8,13 +8,14 @@
  */
 
 class WP_Customize_Section {
+	public $manager;
 	public $id;
 	public $priority       = 10;
 	public $capability     = 'edit_theme_options';
 	public $theme_supports = '';
 	public $title          = '';
 	public $description    = '';
-	public $settings;
+	public $controls;
 
 	/**
 	 * Constructor.
@@ -24,16 +25,17 @@ class WP_Customize_Section {
 	 * @param string $id An specific ID of the section.
 	 * @param array $args Section arguments.
 	 */
-	function __construct( $id, $args = array() ) {
-		$this->id = $id;
-
+	function __construct( $manager, $id, $args = array() ) {
 		$keys = array_keys( get_class_vars( __CLASS__ ) );
 		foreach ( $keys as $key ) {
 			if ( isset( $args[ $key ] ) )
 				$this->$key = $args[ $key ];
 		}
 
-		$this->settings = array(); // Users cannot customize the $settings array.
+		$this->manager = $manager;
+		$this->id = $id;
+
+		$this->controls = array(); // Users cannot customize the $controls array.
 
 		return $this;
 	}
@@ -45,37 +47,46 @@ class WP_Customize_Section {
 	 *
 	 * @return bool False if theme doesn't support the section or user doesn't have the capability.
 	 */
-	function check_capabilities() {
-		if ( ! $this->capability || ! current_user_can( $this->capability ) )
+	public final function check_capabilities() {
+		if ( $this->capability && ! call_user_func_array( 'current_user_can', (array) $this->capability ) )
 			return false;
 
-		if ( $this->theme_supports && ! current_theme_supports( $this->theme_supports ) )
+		if ( $this->theme_supports && ! call_user_func_array( 'current_theme_supports', (array) $this->theme_supports ) )
 			return false;
 
 		return true;
 	}
 
 	/**
+	 * Check capabilities and render the section.
+	 *
+	 * @since 3.4.0
+	 */
+	public final function maybe_render() {
+		if ( ! $this->check_capabilities() )
+			return;
+
+		do_action( 'customize_render_section', $this );
+		do_action( 'customize_render_section_' . $this->id );
+
+		$this->render();
+	}
+
+
+	/**
 	 * Render the section.
 	 *
 	 * @since 3.4.0
 	 */
-	function render() {
-		if ( ! $this->check_capabilities() )
-			return;
+	protected function render() {
 		?>
 		<li id="customize-section-<?php echo esc_attr( $this->id ); ?>" class="control-section customize-section">
-			<h3 class="customize-section-title"><?php echo esc_html( $this->title ); ?></h3>
+			<h3 class="customize-section-title" title="<?php echo esc_attr( $this->description ); ?>"><?php echo esc_html( $this->title ); ?></h3>
 			<ul class="customize-section-content">
-				<?php if ( $this->description ) : ?>
-					<li><p class="howto"><?php echo $this->description; ?></p></li>
-				<?php endif; ?>
-
-				<?php foreach ( $this->settings as $setting ) : ?>
-				<li>
-					<?php $setting->_render(); ?>
-				</li>
-				<?php endforeach; ?>
+				<?php
+				foreach ( $this->controls as $control )
+					$control->maybe_render();
+				?>
 			</ul>
 		</li>
 		<?php

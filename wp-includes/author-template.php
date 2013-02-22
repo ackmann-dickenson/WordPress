@@ -69,8 +69,7 @@ function the_author( $deprecated = '', $deprecated_echo = true ) {
  * @return string The author's display name.
  */
 function get_the_modified_author() {
-	global $post;
-	if ( $last_id = get_post_meta($post->ID, '_edit_last', true) ) {
+	if ( $last_id = get_post_meta( get_post()->ID, '_edit_last', true) ) {
 		$last_user = get_userdata($last_id);
 		return apply_filters('the_modified_author', $last_user->display_name);
 	}
@@ -164,8 +163,7 @@ function the_author_link() {
  * @return int The number of posts by the author.
  */
 function get_the_author_posts() {
-	global $post;
-	return count_user_posts($post->post_author);
+	return count_user_posts( get_post()->post_author );
 }
 
 /**
@@ -246,7 +244,7 @@ function get_author_posts_url($author_id, $author_nicename = '') {
  * <li>optioncount (boolean) (false): Show the count in parenthesis next to the
  * author's name.</li>
  * <li>exclude_admin (boolean) (true): Exclude the 'admin' user that is
- * installed bydefault.</li>
+ * installed by default.</li>
  * <li>show_fullname (boolean) (false): Show their full names.</li>
  * <li>hide_empty (boolean) (true): Don't show authors without any posts.</li>
  * <li>feed (string) (''): If isn't empty, show links to author's feeds.</li>

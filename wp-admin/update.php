@@ -26,7 +26,7 @@ if ( isset($_GET['action']) ) {
 		check_admin_referer( 'bulk-update-plugins' );
 
 		if ( isset( $_GET['plugins'] ) )
-			$plugins = explode( ',', stripslashes($_GET['plugins']) );
+			$plugins = explode( ',', wp_unslash($_GET['plugins']) );
 		elseif ( isset( $_POST['checked'] ) )
 			$plugins = (array) $_POST['checked'];
 		else
@@ -90,7 +90,7 @@ if ( isset($_GET['action']) ) {
 	} elseif ( 'install-plugin' == $action ) {
 
 		if ( ! current_user_can('install_plugins') )
-			wp_die(__('You do not have sufficient permissions to install plugins for this site.'));
+			wp_die( __( 'You do not have sufficient permissions to install plugins on this site.' ) );
 
 		include_once ABSPATH . 'wp-admin/includes/plugin-install.php'; //for plugins_api..
 
@@ -109,7 +109,7 @@ if ( isset($_GET['action']) ) {
 		$nonce = 'install-plugin_' . $plugin;
 		$url = 'update.php?action=install-plugin&plugin=' . $plugin;
 		if ( isset($_GET['from']) )
-			$url .= '&from=' . urlencode(stripslashes($_GET['from']));
+			$url .= '&from=' . urlencode( wp_unslash( $_GET['from'] ) );
 
 		$type = 'web'; //Install plugin type, From Web or an Upload.
 
@@ -121,7 +121,7 @@ if ( isset($_GET['action']) ) {
 	} elseif ( 'upload-plugin' == $action ) {
 
 		if ( ! current_user_can('install_plugins') )
-			wp_die(__('You do not have sufficient permissions to install plugins for this site.'));
+			wp_die( __( 'You do not have sufficient permissions to install plugins on this site.' ) );
 
 		check_admin_referer('plugin-upload');
 
@@ -173,7 +173,7 @@ if ( isset($_GET['action']) ) {
 		check_admin_referer( 'bulk-update-themes' );
 
 		if ( isset( $_GET['themes'] ) )
-			$themes = explode( ',', stripslashes($_GET['themes']) );
+			$themes = explode( ',', wp_unslash( $_GET['themes'] ) );
 		elseif ( isset( $_POST['checked'] ) )
 			$themes = (array) $_POST['checked'];
 		else
@@ -194,7 +194,7 @@ if ( isset($_GET['action']) ) {
 	} elseif ( 'install-theme' == $action ) {
 
 		if ( ! current_user_can('install_themes') )
-			wp_die(__('You do not have sufficient permissions to install themes for this site.'));
+			wp_die( __( 'You do not have sufficient permissions to install themes on this site.' ) );
 
 		include_once ABSPATH . 'wp-admin/includes/theme-install.php'; //for themes_api..
 
@@ -224,7 +224,7 @@ if ( isset($_GET['action']) ) {
 	} elseif ( 'upload-theme' == $action ) {
 
 		if ( ! current_user_can('install_themes') )
-			wp_die(__('You do not have sufficient permissions to install themes for this site.'));
+			wp_die( __( 'You do not have sufficient permissions to install themes on this site.' ) );
 
 		check_admin_referer('theme-upload');
 

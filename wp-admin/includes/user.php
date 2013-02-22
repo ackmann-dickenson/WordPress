@@ -34,22 +34,25 @@ function edit_user( $user_id = 0 ) {
 		$update = true;
 		$user->ID = (int) $user_id;
 		$userdata = get_userdata( $user_id );
-		$user->user_login = $wpdb->escape( $userdata->user_login );
+		$user->user_login = $userdata->user_login;
 	} else {
 		$update = false;
 	}
 
-	if ( !$update && isset( $_POST['user_login'] ) )
-		$user->user_login = sanitize_user($_POST['user_login'], true);
+	// get clean data before we get started.
+	$post_data = wp_unslash( $_POST );
+
+	if ( !$update && isset( $post_data['user_login'] ) )
+		$user->user_login = sanitize_user($post_data['user_login'], true);
 
 	$pass1 = $pass2 = '';
-	if ( isset( $_POST['pass1'] ))
-		$pass1 = $_POST['pass1'];
-	if ( isset( $_POST['pass2'] ))
-		$pass2 = $_POST['pass2'];
+	if ( isset( $post_data['pass1'] ))
+		$pass1 = $post_data['pass1'];
+	if ( isset( $post_data['pass2'] ))
+		$pass2 = $post_data['pass2'];
 
-	if ( isset( $_POST['role'] ) && current_user_can( 'edit_users' ) ) {
-		$new_role = sanitize_text_field( $_POST['role'] );
+	if ( isset( $post_data['role'] ) && current_user_can( 'edit_users' ) ) {
+		$new_role = sanitize_text_field( $post_data['role'] );
 		$potential_role = isset($wp_roles->role_objects[$new_role]) ? $wp_roles->role_objects[$new_role] : false;
 		// Don't let anyone with 'edit_users' (admins) edit their own role to something without it.
 		// Multisite super admins can freely edit their blog roles -- they possess all caps.
@@ -62,43 +65,44 @@ function edit_user( $user_id = 0 ) {
 			wp_die(__('You can&#8217;t give users that role.'));
 	}
 
-	if ( isset( $_POST['email'] ))
-		$user->user_email = sanitize_text_field( $_POST['email'] );
-	if ( isset( $_POST['url'] ) ) {
-		if ( empty ( $_POST['url'] ) || $_POST['url'] == 'http://' ) {
+	if ( isset( $post_data['email'] ))
+		$user->user_email = sanitize_text_field( $post_data['email'] );
+	if ( isset( $post_data['url'] ) ) {
+		if ( empty ( $post_data['url'] ) || $post_data['url'] == 'http://' ) {
 			$user->user_url = '';
 		} else {
-			$user->user_url = esc_url_raw( $_POST['url'] );
-			$user->user_url = preg_match('/^(https?|ftps?|mailto|news|irc|gopher|nntp|feed|telnet):/is', $user->user_url) ? $user->user_url : 'http://'.$user->user_url;
+			$user->user_url = esc_url_raw( $post_data['url'] );
+			$protocols = implode( '|', array_map( 'preg_quote', wp_allowed_protocols() ) );
+			$user->user_url = preg_match('/^(' . $protocols . '):/is', $user->user_url) ? $user->user_url : 'http://'.$user->user_url;
 		}
 	}
-	if ( isset( $_POST['first_name'] ) )
-		$user->first_name = sanitize_text_field( $_POST['first_name'] );
-	if ( isset( $_POST['last_name'] ) )
-		$user->last_name = sanitize_text_field( $_POST['last_name'] );
-	if ( isset( $_POST['nickname'] ) )
-		$user->nickname = sanitize_text_field( $_POST['nickname'] );
-	if ( isset( $_POST['display_name'] ) )
-		$user->display_name = sanitize_text_field( $_POST['display_name'] );
+	if ( isset( $post_data['first_name'] ) )
+		$user->first_name = sanitize_text_field( $post_data['first_name'] );
+	if ( isset( $post_data['last_name'] ) )
+		$user->last_name = sanitize_text_field( $post_data['last_name'] );
+	if ( isset( $post_data['nickname'] ) )
+		$user->nickname = sanitize_text_field( $post_data['nickname'] );
+	if ( isset( $post_data['display_name'] ) )
+		$user->display_name = sanitize_text_field( $post_data['display_name'] );
 
-	if ( isset( $_POST['description'] ) )
-		$user->description = trim( $_POST['description'] );
+	if ( isset( $post_data['description'] ) )
+		$user->description = trim( $post_data['description'] );
 
 	foreach ( _wp_get_user_contactmethods( $user ) as $method => $name ) {
-		if ( isset( $_POST[$method] ))
-			$user->$method = sanitize_text_field( $_POST[$method] );
+		if ( isset( $post_data[$method] ))
+			$user->$method = sanitize_text_field( $post_data[$method] );
 	}
 
 	if ( $update ) {
-		$user->rich_editing = isset( $_POST['rich_editing'] ) && 'false' == $_POST['rich_editing'] ? 'false' : 'true';
-		$user->admin_color = isset( $_POST['admin_color'] ) ? sanitize_text_field( $_POST['admin_color'] ) : 'fresh';
-		$user->show_admin_bar_front = isset( $_POST['admin_bar_front'] ) ? 'true' : 'false';
+		$user->rich_editing = isset( $post_data['rich_editing'] ) && 'false' == $post_data['rich_editing'] ? 'false' : 'true';
+		$user->admin_color = isset( $post_data['admin_color'] ) ? sanitize_text_field( $post_data['admin_color'] ) : 'fresh';
+		$user->show_admin_bar_front = isset( $post_data['admin_bar_front'] ) ? 'true' : 'false';
 	}
 
-	$user->comment_shortcuts = isset( $_POST['comment_shortcuts'] ) && 'true' == $_POST['comment_shortcuts'] ? 'true' : '';
+	$user->comment_shortcuts = isset( $post_data['comment_shortcuts'] ) && 'true' == $post_data['comment_shortcuts'] ? 'true' : '';
 
 	$user->use_ssl = 0;
-	if ( !empty($_POST['use_ssl']) )
+	if ( !empty($post_data['use_ssl']) )
 		$user->use_ssl = 1;
 
 	$errors = new WP_Error();
@@ -123,7 +127,7 @@ function edit_user( $user_id = 0 ) {
 	}
 
 	/* Check for "\" in password */
-	if ( false !== strpos( stripslashes($pass1), "\\" ) )
+	if ( false !== strpos( $pass1, "\\" ) )
 		$errors->add( 'pass', __( '<strong>ERROR</strong>: Passwords may not contain the character "\\".' ), array( 'form-field' => 'pass1' ) );
 
 	/* checking the password has been typed twice the same */
@@ -133,7 +137,7 @@ function edit_user( $user_id = 0 ) {
 	if ( !empty( $pass1 ) )
 		$user->user_pass = $pass1;
 
-	if ( !$update && isset( $_POST['user_login'] ) && !validate_username( $_POST['user_login'] ) )
+	if ( !$update && isset( $post_data['user_login'] ) && !validate_username( $post_data['user_login'] ) )
 		$errors->add( 'user_login', __( '<strong>ERROR</strong>: This username is invalid because it uses illegal characters. Please enter a valid username.' ));
 
 	if ( !$update && username_exists( $user->user_login ) )
@@ -143,7 +147,7 @@ function edit_user( $user_id = 0 ) {
 	if ( empty( $user->user_email ) ) {
 		$errors->add( 'empty_email', __( '<strong>ERROR</strong>: Please enter an e-mail address.' ), array( 'form-field' => 'email' ) );
 	} elseif ( !is_email( $user->user_email ) ) {
-		$errors->add( 'invalid_email', __( '<strong>ERROR</strong>: The e-mail address isn&#8217;t correct.' ), array( 'form-field' => 'email' ) );
+		$errors->add( 'invalid_email', __( '<strong>ERROR</strong>: The email address isn&#8217;t correct.' ), array( 'form-field' => 'email' ) );
 	} elseif ( ( $owner_id = email_exists($user->user_email) ) && ( !$update || ( $owner_id != $user->ID ) ) ) {
 		$errors->add( 'email_exists', __('<strong>ERROR</strong>: This email is already registered, please choose another one.'), array( 'form-field' => 'email' ) );
 	}
@@ -155,10 +159,10 @@ function edit_user( $user_id = 0 ) {
 		return $errors;
 
 	if ( $update ) {
-		$user_id = wp_update_user( get_object_vars( $user ) );
+		$user_id = wp_update_user( $user );
 	} else {
-		$user_id = wp_insert_user( get_object_vars( $user ) );
-		wp_new_user_notification( $user_id, isset($_POST['send_password']) ? $pass1 : '' );
+		$user_id = wp_insert_user( $user );
+		wp_new_user_notification( $user_id, isset($post_data['send_password']) ? $pass1 : '' );
 	}
 	return $user_id;
 }
@@ -197,7 +201,7 @@ function get_editable_roles() {
  * @return object WP_User object with user data.
  */
 function get_user_to_edit( $user_id ) {
-	$user = new WP_User( $user_id );
+	$user = get_userdata( $user_id );
 
 	$user->filter = 'edit';
 
@@ -239,6 +243,9 @@ function wp_delete_user( $id, $reassign = 'novalue' ) {
 	$id = (int) $id;
 	$user = new WP_User( $id );
 
+	if ( !$user->exists() )
+		return false;
+
 	// allow for transaction statement
 	do_action('delete_user', $id);
 
@@ -269,8 +276,18 @@ function wp_delete_user( $id, $reassign = 'novalue' ) {
 		}
 	} else {
 		$reassign = (int) $reassign;
+		$post_ids = $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM $wpdb->posts WHERE post_author = %d", $id ) );
 		$wpdb->update( $wpdb->posts, array('post_author' => $reassign), array('post_author' => $id) );
+		if ( ! empty( $post_ids ) ) {
+			foreach ( $post_ids as $post_id )
+				clean_post_cache( $post_id );
+		}
+		$link_ids = $wpdb->get_col( $wpdb->prepare("SELECT link_id FROM $wpdb->links WHERE link_owner = %d", $id) );
 		$wpdb->update( $wpdb->links, array('link_owner' => $reassign), array('link_owner' => $id) );
+		if ( ! empty( $link_ids ) ) {
+			foreach ( $link_ids as $link_id )
+				clean_bookmark_cache( $link_id );
+		}
 	}
 
 	// FINALLY, delete user
@@ -352,7 +369,7 @@ function default_password_nag() {
 	echo '<strong>' . __('Notice:') . '</strong> ';
 	_e('You&rsquo;re using the auto-generated password for your account. Would you like to change it to something easier to remember?');
 	echo '</p><p>';
-	printf( '<a href="%s">' . __('Yes, take me to my profile page') . '</a> | ', admin_url('profile.php') . '#password' );
+	printf( '<a href="%s">' . __('Yes, take me to my profile page') . '</a> | ', get_edit_profile_url( get_current_user_id() ) . '#password' );
 	printf( '<a href="%s" id="default-password-nag-no">' . __('No thanks, do not remind me again') . '</a>', '?default_password_nag=0' );
 	echo '</p></div>';
 }

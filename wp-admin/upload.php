@@ -57,7 +57,7 @@ if ( $doaction ) {
 			if ( !$parent_id )
 				return;
 
-			$parent = &get_post( $parent_id );
+			$parent = get_post( $parent_id );
 			if ( !current_user_can( 'edit_post', $parent_id ) )
 				wp_die( __( 'You are not allowed to edit this post.' ) );
 
@@ -69,12 +69,14 @@ if ( $doaction ) {
 					continue;
 
 				$attach[] = $att_id;
-				clean_attachment_cache( $att_id );
 			}
 
 			if ( ! empty( $attach ) ) {
-				$attach = implode( ',', $attach );
-				$attached = $wpdb->query( $wpdb->prepare( "UPDATE $wpdb->posts SET post_parent = %d WHERE post_type = 'attachment' AND ID IN ( $attach )", $parent_id ) );
+				$attach_string = implode( ',', $attach );
+				$attached = $wpdb->query( $wpdb->prepare( "UPDATE $wpdb->posts SET post_parent = %d WHERE post_type = 'attachment' AND ID IN ( $attach_string )", $parent_id ) );
+				foreach ( $attach as $att_id ) {
+					clean_attachment_cache( $att_id );
+				}
 			}
 
 			if ( isset( $attached ) ) {
@@ -130,7 +132,7 @@ if ( $doaction ) {
 	wp_redirect( $location );
 	exit;
 } elseif ( ! empty( $_GET['_wp_http_referer'] ) ) {
-	 wp_redirect( remove_query_arg( array( '_wp_http_referer', '_wpnonce' ), stripslashes( $_SERVER['REQUEST_URI'] ) ) );
+	 wp_redirect( remove_query_arg( array( '_wp_http_referer', '_wpnonce' ), wp_unslash( $_SERVER['REQUEST_URI'] ) ) );
 	 exit;
 }
 

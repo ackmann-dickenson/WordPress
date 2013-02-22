@@ -1,6 +1,8 @@
 <?php
 /**
- * File contains all the administration image manipulation functions.
+ * Functions for reading, writing, modifying, and deleting files on the file system.
+ * Includes functionality for theme-specific files as well as operations for uploading,
+ * archiving, and rendering output when necessary.
  *
  * @package WordPress
  * @subpackage Administration
@@ -79,10 +81,10 @@ function get_file_description( $file ) {
 function get_home_path() {
 	$home = get_option( 'home' );
 	$siteurl = get_option( 'siteurl' );
-	if ( $home != '' && $home != $siteurl ) {
-		$wp_path_rel_to_home = str_replace($home, '', $siteurl); /* $siteurl - $home */
-		$pos = strrpos($_SERVER["SCRIPT_FILENAME"], $wp_path_rel_to_home);
-		$home_path = substr($_SERVER["SCRIPT_FILENAME"], 0, $pos);
+	if ( ! empty( $home ) && 0 !== strcasecmp( $home, $siteurl ) ) {
+		$wp_path_rel_to_home = str_ireplace( $home, '', $siteurl ); /* $siteurl - $home */
+		$pos = strripos( str_replace( '\\', '/', $_SERVER['SCRIPT_FILENAME'] ), trailingslashit( $wp_path_rel_to_home ) );
+		$home_path = substr( $_SERVER['SCRIPT_FILENAME'], 0, $pos );
 		$home_path = trailingslashit( $home_path );
 	} else {
 		$home_path = ABSPATH;
@@ -225,6 +227,7 @@ function validate_file_to_edit( $file, $allowed_files = '' ) {
  * @uses delete_transient
  * @param array $file Reference to a single element of $_FILES. Call the function once for each uploaded file.
  * @param array $overrides Optional. An associative array of names=>values to override default variables with extract( $overrides, EXTR_OVERWRITE ).
+ * @param string $time Optional. Time formatted in 'yyyy/mm'.
  * @return array On success, returns an associative array of file attributes. On failure, returns $overrides['upload_error_handler'](&$file, $message ) or array( 'error'=>$message ).
  */
 function wp_handle_upload( &$file, $overrides = false, $time = null ) {
@@ -357,9 +360,10 @@ function wp_handle_upload( &$file, $overrides = false, $time = null ) {
  * @uses wp_unique_filename
  * @param array $file an array similar to that of a PHP $_FILES POST array
  * @param array $overrides Optional. An associative array of names=>values to override default variables with extract( $overrides, EXTR_OVERWRITE ).
+ * @param string $time Optional. Time formatted in 'yyyy/mm'.
  * @return array On success, returns an associative array of file attributes. On failure, returns $overrides['upload_error_handler'](&$file, $message ) or array( 'error'=>$message ).
  */
-function wp_handle_sideload( &$file, $overrides = false ) {
+function wp_handle_sideload( &$file, $overrides = false, $time = null ) {
 	// The default error handler.
 	if (! function_exists( 'wp_handle_upload_error' ) ) {
 		function wp_handle_upload_error( &$file, $message ) {
@@ -436,7 +440,7 @@ function wp_handle_sideload( &$file, $overrides = false ) {
 	}
 
 	// A writable uploads dir will pass this test. Again, there's no point overriding this one.
-	if ( ! ( ( $uploads = wp_upload_dir() ) && false === $uploads['error'] ) )
+	if ( ! ( ( $uploads = wp_upload_dir( $time ) ) && false === $uploads['error'] ) )
 		return $upload_error_handler( $file, $uploads['error'] );
 
 	$filename = wp_unique_filename( $uploads['path'], $file['name'], $unique_filename_callback );
@@ -897,13 +901,13 @@ function request_filesystem_credentials($form_post, $type = '', $error = false, 
 	$credentials = get_option('ftp_credentials', array( 'hostname' => '', 'username' => ''));
 
 	// If defined, set it to that, Else, If POST'd, set it to that, If not, Set it to whatever it previously was(saved details in option)
-	$credentials['hostname'] = defined('FTP_HOST') ? FTP_HOST : (!empty($_POST['hostname']) ? stripslashes($_POST['hostname']) : $credentials['hostname']);
-	$credentials['username'] = defined('FTP_USER') ? FTP_USER : (!empty($_POST['username']) ? stripslashes($_POST['username']) : $credentials['username']);
-	$credentials['password'] = defined('FTP_PASS') ? FTP_PASS : (!empty($_POST['password']) ? stripslashes($_POST['password']) : '');
+	$credentials['hostname'] = defined('FTP_HOST') ? FTP_HOST : (!empty($_POST['hostname']) ? wp_unslash( $_POST['hostname'] ) : $credentials['hostname']);
+	$credentials['username'] = defined('FTP_USER') ? FTP_USER : (!empty($_POST['username']) ? wp_unslash( $_POST['username'] ) : $credentials['username']);
+	$credentials['password'] = defined('FTP_PASS') ? FTP_PASS : (!empty($_POST['password']) ? wp_unslash( $_POST['password'] ) : '');
 
 	// Check to see if we are setting the public/private keys for ssh
-	$credentials['public_key'] = defined('FTP_PUBKEY') ? FTP_PUBKEY : (!empty($_POST['public_key']) ? stripslashes($_POST['public_key']) : '');
-	$credentials['private_key'] = defined('FTP_PRIKEY') ? FTP_PRIKEY : (!empty($_POST['private_key']) ? stripslashes($_POST['private_key']) : '');
+	$credentials['public_key'] = defined('FTP_PUBKEY') ? FTP_PUBKEY : (!empty($_POST['public_key']) ? wp_unslash( $_POST['public_key'] ) : '');
+	$credentials['private_key'] = defined('FTP_PRIKEY') ? FTP_PRIKEY : (!empty($_POST['private_key']) ? wp_unslash( $_POST['private_key'] ) : '');
 
 	//sanitize the hostname, Some people might pass in odd-data:
 	$credentials['hostname'] = preg_replace('|\w+://|', '', $credentials['hostname']); //Strip any schemes off
@@ -921,8 +925,8 @@ function request_filesystem_credentials($form_post, $type = '', $error = false, 
 	else if ( (defined('FTP_SSL') && FTP_SSL) && 'ftpext' == $type ) //Only the FTP Extension understands SSL
 		$credentials['connection_type'] = 'ftps';
 	else if ( !empty($_POST['connection_type']) )
-		$credentials['connection_type'] = stripslashes($_POST['connection_type']);
-	else if ( !isset($credentials['connection_type']) ) //All else fails (And its not defaulted to something else saved), Default to FTP
+		$credentials['connection_type'] = wp_unslash( $_POST['connection_type'] );
+	else if ( !isset($credentials['connection_type']) ) //All else fails (And it's not defaulted to something else saved), Default to FTP
 		$credentials['connection_type'] = 'ftp';
 
 	if ( ! $error &&
@@ -1046,7 +1050,7 @@ jQuery(function($){
 <?php
 foreach ( (array) $extra_fields as $field ) {
 	if ( isset( $_POST[ $field ] ) )
-		echo '<input type="hidden" name="' . esc_attr( $field ) . '" value="' . esc_attr( stripslashes( $_POST[ $field ] ) ) . '" />';
+		echo '<input type="hidden" name="' . esc_attr( $field ) . '" value="' . esc_attr( wp_unslash( $_POST[ $field ] ) ) . '" />';
 }
 submit_button( __( 'Proceed' ), 'button', 'upgrade' );
 ?>

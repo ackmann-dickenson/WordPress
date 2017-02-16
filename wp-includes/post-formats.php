@@ -11,12 +11,12 @@
  *
  * @since 3.1.0
  *
- * @param int|object $post A post
- *
- * @return mixed The format if successful. False if no format is set. WP_Error if errors.
+ * @param int|object|null $post Post ID or post object. Optional, default is the current post from the loop.
+ * @return string|false The format if successful. False otherwise.
  */
 function get_post_format( $post = null ) {
-	$post = get_post($post);
+	if ( ! $post = get_post( $post ) )
+		return false;
 
 	if ( ! post_type_supports( $post->post_type, 'post-formats' ) )
 		return false;
@@ -26,23 +26,30 @@ function get_post_format( $post = null ) {
 	if ( empty( $_format ) )
 		return false;
 
-	$format = array_shift( $_format );
+	$format = reset( $_format );
 
-	return ( str_replace('post-format-', '', $format->slug ) );
+	return str_replace('post-format-', '', $format->slug );
 }
 
 /**
- * Check if a post has a particular format
+ * Check if a post has any of the given formats, or any format.
  *
  * @since 3.1.0
- * @uses has_term()
  *
- * @param string $format The format to check for
- * @param object|id $post The post to check. If not supplied, defaults to the current post if used in the loop.
- * @return bool True if the post has the format, false otherwise.
+ * @param string|array    $format Optional. The format or formats to check.
+ * @param object|int|null $post   Optional. The post to check. If not supplied, defaults to the current post if used in the loop.
+ * @return bool True if the post has any of the given formats (or any format, if no format specified), false otherwise.
  */
-function has_post_format( $format, $post = null ) {
-	return has_term('post-format-' . sanitize_key($format), 'post_format', $post);
+function has_post_format( $format = array(), $post = null ) {
+	$prefixed = array();
+
+	if ( $format ) {
+		foreach ( (array) $format as $single ) {
+			$prefixed[] = 'post-format-' . sanitize_key( $single );
+		}
+	}
+
+	return has_term( $prefixed, 'post_format', $post );
 }
 
 /**
@@ -50,49 +57,25 @@ function has_post_format( $format, $post = null ) {
  *
  * @since 3.1.0
  *
- * @param int|object $post The post for which to assign a format
- * @param string $format  A format to assign. Use an empty string or array to remove all formats from the post.
- * @return mixed WP_Error on error. Array of affected term IDs on success.
+ * @param int|object $post   The post for which to assign a format.
+ * @param string     $format A format to assign. Use an empty string or array to remove all formats from the post.
+ * @return array|WP_Error|false WP_Error on error. Array of affected term IDs on success.
  */
 function set_post_format( $post, $format ) {
-	$post = get_post($post);
+	$post = get_post( $post );
 
-	if ( empty($post) )
-		return new WP_Error('invalid_post', __('Invalid post'));
+	if ( empty( $post ) )
+		return new WP_Error( 'invalid_post', __( 'Invalid post.' ) );
 
-	if ( !empty($format) ) {
-		$format = sanitize_key($format);
-		if ( 'standard' == $format || !in_array( $format, array_keys( get_post_format_slugs() ) ) )
+	if ( ! empty( $format ) ) {
+		$format = sanitize_key( $format );
+		if ( 'standard' === $format || ! in_array( $format, get_post_format_slugs() ) )
 			$format = '';
 		else
 			$format = 'post-format-' . $format;
 	}
 
-	return wp_set_post_terms($post->ID, $format, 'post_format');
-}
-
-/**
- * Retrieve post format metadata for a post
- *
- * @since 3.6.0
- *
- * @param int $post_id
- * @return null
- */
-function get_post_format_meta( $post_id = 0 ) {
-	$values = array(
-		'quote'        => '',
-		'quote_source' => '',
-		'image'        => '',
-		'url'          => '',
-		'gallery'      => '',
-		'media'        => '',
-	);
-
-	foreach ( $values as $key => $value )
-		$values[$key] = get_post_meta( $post_id, '_wp_format_' . $key, true );
-
-	return $values;
+	return wp_set_post_terms( $post->ID, $format, 'post_format' );
 }
 
 /**
@@ -100,7 +83,7 @@ function get_post_format_meta( $post_id = 0 ) {
  *
  * @since 3.1.0
  *
- * @return array The array of translations
+ * @return array The array of translated post format names.
  */
 function get_post_format_strings() {
 	$strings = array(
@@ -135,8 +118,8 @@ function get_post_format_slugs() {
  *
  * @since 3.1.0
  *
- * @param string $slug A post format slug
- * @return string The translated post format name
+ * @param string $slug A post format slug.
+ * @return string The translated post format name.
  */
 function get_post_format_string( $slug ) {
 	$strings = get_post_format_strings();
@@ -151,8 +134,8 @@ function get_post_format_string( $slug ) {
  *
  * @since 3.1.0
  *
- * @param string $format Post format
- * @return string Link
+ * @param string $format The post format slug.
+ * @return string|WP_Error|false The post format term link.
  */
 function get_post_format_link( $format ) {
 	$term = get_term_by('slug', 'post-format-' . $format, 'post_format' );
@@ -166,6 +149,9 @@ function get_post_format_link( $format ) {
  *
  * @access private
  * @since 3.1.0
+ *
+ * @param array $qvs
+ * @return array
  */
 function _post_format_request( $qvs ) {
 	if ( ! isset( $qvs['post_format'] ) )
@@ -178,18 +164,25 @@ function _post_format_request( $qvs ) {
 		$qvs['post_type'] = $tax->object_type;
 	return $qvs;
 }
-add_filter( 'request', '_post_format_request' );
 
 /**
  * Filters the post format term link to remove the format prefix.
  *
  * @access private
  * @since 3.1.0
+ *
+ * @global WP_Rewrite $wp_rewrite
+ *
+ * @param string $link
+ * @param object $term
+ * @param string $taxonomy
+ * @return string
  */
 function _post_format_link( $link, $term, $taxonomy ) {
 	global $wp_rewrite;
-	if ( 'post_format' != $taxonomy )
+	if ( 'post_format' != $taxonomy ) {
 		return $link;
+	}
 	if ( $wp_rewrite->get_extra_permastruct( $taxonomy ) ) {
 		return str_replace( "/{$term->slug}", '/' . str_replace( 'post-format-', '', $term->slug ), $link );
 	} else {
@@ -197,13 +190,15 @@ function _post_format_link( $link, $term, $taxonomy ) {
 		return add_query_arg( 'post_format', str_replace( 'post-format-', '', $term->slug ), $link );
 	}
 }
-add_filter( 'term_link', '_post_format_link', 10, 3 );
 
 /**
  * Remove the post format prefix from the name property of the term object created by get_term().
  *
  * @access private
  * @since 3.1.0
+ *
+ * @param object $term
+ * @return object
  */
 function _post_format_get_term( $term ) {
 	if ( isset( $term->slug ) ) {
@@ -211,18 +206,22 @@ function _post_format_get_term( $term ) {
 	}
 	return $term;
 }
-add_filter( 'get_post_format', '_post_format_get_term' );
 
 /**
  * Remove the post format prefix from the name property of the term objects created by get_terms().
  *
  * @access private
  * @since 3.1.0
+ *
+ * @param array        $terms
+ * @param string|array $taxonomies
+ * @param array        $args
+ * @return array
  */
 function _post_format_get_terms( $terms, $taxonomies, $args ) {
 	if ( in_array( 'post_format', (array) $taxonomies ) ) {
 		if ( isset( $args['fields'] ) && 'names' == $args['fields'] ) {
-			foreach( $terms as $order => $name ) {
+			foreach ( $terms as $order => $name ) {
 				$terms[$order] = get_post_format_string( str_replace( 'post-format-', '', $name ) );
 			}
 		} else {
@@ -235,13 +234,15 @@ function _post_format_get_terms( $terms, $taxonomies, $args ) {
 	}
 	return $terms;
 }
-add_filter( 'get_terms', '_post_format_get_terms', 10, 3 );
 
 /**
  * Remove the post format prefix from the name property of the term objects created by wp_get_object_terms().
  *
  * @access private
  * @since 3.1.0
+ *
+ * @param array $terms
+ * @return array
  */
 function _post_format_wp_get_object_terms( $terms ) {
 	foreach ( (array) $terms as $order => $term ) {
@@ -250,180 +251,4 @@ function _post_format_wp_get_object_terms( $terms ) {
 		}
 	}
 	return $terms;
-}
-add_filter( 'wp_get_object_terms', '_post_format_wp_get_object_terms' );
-
-/**
- * Return the class for a post format content wrapper
- *
- * @since 3.6.0
- *
- * @param string $format
- */
-function get_post_format_content_class( $format ) {
-	return apply_filters( 'post_format_content_class', 'post-format-content', $format );
-}
-
-/**
- * Ouput the class for a post format content wrapper
- *
- * @since 3.6.0
- *
- * @param string $format
- */
-function post_format_content_class( $format ) {
-	echo get_post_format_content_class( $format );
-}
-
-/**
- * Provide fallback behavior for Posts that have associated post format
- *
- * @since 3.6.0
- *
- * @param string $content
- */
-function post_formats_compat( $content, $id = 0 ) {
-	$post = empty( $id ) ? get_post() : get_post( $id );
-	if ( empty( $post ) )
-		return $content;
-
-	$format = get_post_format( $post );
-	if ( empty( $format ) || in_array( $format, array( 'status', 'aside', 'chat' ) ) )
-		return $content;
-
-	if ( current_theme_supports( 'structured-post-formats', $format ) )
-		return $content;
-
-	$defaults = array(
-		'position' => 'after',
-		'tag' => 'div',
-		'class' => get_post_format_content_class( $format ),
-		'link_class' => '',
-		'image_class' => '',
-		'gallery' => '[gallery]',
-		'audio' => '',
-		'video' => ''
-	);
-
-	$args = apply_filters( 'post_format_compat', array() );
-	$compat = wp_parse_args( $args, $defaults );
-
-	$show_content = true;
-	$format_output = '';
-	$meta = get_post_format_meta( $post->ID );
-
-	switch ( $format ) {
-		case 'link':
-			$compat['tag'] = '';
-
-			if ( ! empty( $meta['url'] ) ) {
-				$esc_url = preg_quote( $meta['url'], '#' );
-				// Make sure the same URL isn't in the post (modified/extended versions allowed)
-				if ( ! preg_match( '#' . $esc_url . '[^/&\?]#', $content ) ) {
-					$format_output .= sprintf(
-						'<a %shref="%s">%s</a>',
-						empty( $compat['link_class'] ) ? '' : sprintf( 'class="%s" ', esc_attr( $compat['link_class'] ) ),
-						esc_url( $meta['url'] ),
-						empty( $post->post_title ) ? esc_url( $meta['url'] ) : apply_filters( 'the_title', $post->post_title )
-					);
-				}
-			}
-			break;
-
-		case 'quote':
-			if ( ! empty( $meta['quote'] ) && ! stristr( $content, $meta['quote'] ) ) {
-				$format_output .= sprintf( '<blockquote>%s</blockquote>', $meta['quote'] );
-				if ( ! empty( $meta['quote_source'] ) ) {
-					$format_output .= sprintf(
-						'<cite>%s</cite>',
-						! empty( $meta['url'] ) ?
-							sprintf( '<a href="%s">%s</a>', esc_url( $meta['url'] ), $meta['quote_source'] ) :
-							$meta['quote_source']
-					);
-				}
-			}
-			break;
-
-		case 'image':
-			if ( ! empty( $meta['image'] ) ) {
-				$image = is_numeric( $meta['image'] ) ? wp_get_attachment_url( $meta['image'] ) : $meta['image'];
-
-				if ( ! empty( $image ) && ! stristr( $content, $image ) ) {
-					$image_html = sprintf(
-						'<img %ssrc="%s" alt="" />',
-						empty( $compat['image_class'] ) ? '' : sprintf( 'class="%s" ', esc_attr( $compat['image_class'] ) ),
-						$image
-					);
-					if ( empty( $meta['url'] ) ) {
-						$format_output .= $image_html;
-					} else {
-						$format_output .= sprintf(
-							'<a href="%s">%s</a>',
-							esc_url( $meta['url'] ),
-							$image_html
-						);
-					}
-				}
-			}
-			break;
-
-		case 'gallery':
-			preg_match_all( '/' . get_shortcode_regex() . '/s', $content, $matches );
-			if ( ! empty( $matches ) && isset( $matches[2] ) ) {
-				foreach ( (array) $matches[2] as $match ) {
-					if ( 'gallery' === $match )
-						break 2; // foreach + case
-				}
-			}
-
-			if ( empty( $meta['gallery'] ) && ! empty( $compat['gallery'] ) ) {
-				$format_output .= $compat['gallery'];
-			} elseif ( ! empty( $meta['gallery'] ) ) {
-				$format_output .= $meta['gallery'];
-			}
-			break;
-
-		case 'video':
-		case 'audio':
-			$shortcode_regex = '/' . get_shortcode_regex() . '/s';
-			$matches = preg_match( $shortcode_regex, $content );
-			if ( ! $matches || $format !== $matches[2] ) {
-				if ( empty( $meta['media'] ) && ! empty( $compat[$format] ) ) {
-					$format_output .= $compat[$format];
-				} elseif ( ! empty( $meta['media'] ) ) {
-					// the metadata is a shortcode or an embed code
-					if ( preg_match( $shortcode_regex, $meta['media'] ) || preg_match( '#<[^>]+>#', $meta['media'] ) ) {
-						$format_output .= $meta['media'];
-					} elseif ( ! stristr( $content, $meta['media'] ) ) {
-						// attempt to embed the URL
-						$format_output .= sprintf( '[embed]%s[/embed]', $meta['media'] );
-					}
-				}
-			}
-			break;
-		default:
-			return $content;
-			break;
-	}
-
-	if ( empty( $format_output ) )
-		return $content;
-
-	$output = '';
-
-	if ( ! empty( $content ) && $show_content && 'before' !== $compat['position'] )
-		$output .= $content . "\n\n";
-
-	if ( ! empty( $compat['tag'] ) )
-		$output .= sprintf( '<%s class="%s">', tag_escape( $compat['tag'] ), esc_attr( $compat['class'] ) );
-
-	$output .= "\n\n" . $format_output;
-
-	if ( ! empty( $compat['tag'] ) )
-		$output .= sprintf( '</%s>', tag_escape( $compat['tag'] ) );
-
-	if ( ! empty( $content ) && $show_content && 'before' === $compat['position'] )
-		$output .= "\n\n" . $content;
-
-	return $output;
 }
